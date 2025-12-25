@@ -26,17 +26,29 @@ let updateInterval;
 const maxEvents = 300;
 let allEvents = [];
 let activeAlarms = new Map();
-let activePendentes = new Map(); // chave: `${local}-${cod}-${zona}`, valor: {first: ev, events: [], resolved: false}
-
+let activePendentes = new Map();
 let selectedEvent = null;
 let debounceTimeout;
-//let units = [{ value: "", text: "Selecione uma unidade" }];
+let units = []; // DECLARAÇÃO DA VARIÁVEL UNITS
+let selectedPendingEvent = null;
+let pendingCommands = new Map();
+let currentClientId = null;
+let ws = null;
+let reconnectTimer = null;
+const reconnectDelay = 3000;
+let cryptoInstance = null;
+
+// Carregar unidades ao iniciar
 (async () => {
     try {
+        console.log('🔄 Carregando unidades...');
         units = await getUnits();
+        console.log(`✅ ${units.length} unidades carregadas`);
         populateUnitSelect();
     } catch (err) {
-        console.error('Erro ao carregar unidades:', err);
+        console.error('❌ Erro ao carregar unidades:', err);
+        // Mostra mensagem de erro para o usuário
+        unitSelect.innerHTML = '<option value="">Erro ao carregar unidades - Verifique a conexão</option>';
     }
 })();
 
@@ -48,14 +60,8 @@ function populateUnitSelect() {
         opt.textContent = `${u.local} (${u.value})`;
         unitSelect.appendChild(opt);
     });
+    console.log(`✅ ${units.length} unidades adicionadas ao select`);
 }
-let selectedPendingEvent = null;
-let pendingCommands = new Map();
-let currentClientId = null;
-let ws = null;
-let reconnectTimer = null;
-const reconnectDelay = 3000;
-let cryptoInstance = null;
 
 async function initCrypto() {
     cryptoInstance = new ViawebCrypto(CHAVE, IV);
