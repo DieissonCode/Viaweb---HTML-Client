@@ -1,11 +1,13 @@
-﻿// units-db.js (atualizado)
-import sql from 'mssql';
-import { dbConfig } from './db-config.js';
-
-let pool;
+﻿// units-db.js
+let pool = null;
 
 async function connect() {
-    if (!pool) pool = await sql.connect(dbConfig);
+    if (!pool) {
+        const { dbConfig } = await import('./db-config.js');
+        const mssql = window.mssql;
+        if (!mssql) throw new Error('mssql não carregado');
+        pool = await mssql.connect(dbConfig);
+    }
 }
 
 export async function getUnits() {
