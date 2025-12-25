@@ -1,0 +1,126 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viaweb - Cotrijal</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .section-header {
+            background: var(--bg-dark);
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            user-select: none;
+        }
+        .section-header .toggle-arrow {
+            font-size: 18px;
+            transition: transform 0.3s ease;
+        }
+        .section-header.collapsed .toggle-arrow {
+            transform: rotate(-90deg);
+        }
+        .section-content {
+            transition: max-height 0.4s ease, opacity 0.3s ease, margin-bottom 0.4s ease;
+            max-height: 2000px;
+            opacity: 1;
+            overflow: hidden;
+        }
+        .section-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin-bottom: 0 !important;
+        }
+        #control-panel-section { margin-bottom: 24px; }
+    </style>
+</head>
+<body>
+    <h1 id="status" class="disconnected">
+        <span id="status-text">Viaweb - Cotrijal</span>
+        <span id="status-icon"></span>
+    </h1>
+
+    <div id="control-panel-section">
+        <div class="section-header collapsed" id="control-header">
+            <strong>Centrais de Alarme</strong>
+            <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="section-content collapsed" id="control-content">
+            <div id="control-panel">
+                <div id="unit-select-container">
+                    <label for="unit-search">Unidade:</label>
+                    <input type="text" id="unit-search" placeholder="Pesquisar unidade, ID ou sigla">
+                    <select id="unit-select"><option value="">Selecione uma unidade</option></select>
+                </div>
+                <div id="client-info">
+                    Cliente: <span id="client-number">Nenhum selecionado</span>
+                    <input type="checkbox" id="auto-update">
+                    <label for="auto-update">Auto atualizar</label>
+                    <input type="hidden" id="html-version" value="1.1.0">
+                </div>
+                <button id="arm-button" disabled>🛡️ Armar</button>
+                <button id="disarm-button" disabled>🔓 Desarmar</button>
+                <div class="zone-count">Zonas totais: <span id="total-zones">0</span></div>
+                <hr>
+                <div class="container">
+                    <div id="partitions-list"></div>
+                    <div id="zones-list"><div id="zones-columns"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="events-section">
+        <div class="section-header" id="events-header">
+            <strong>Eventos</strong>
+            <span class="toggle-arrow">▼</span>
+        </div>
+        <div class="section-content" id="events-content">
+            <div id="events-container">
+                <input type="text" id="events-filter" placeholder="Filtrar eventos...">
+                <div id="events-tabs">
+                    <button class="tab-btn active" data-tab="all">Todos</button>
+                    <button class="tab-btn" data-tab="alarms">Disparos (<span id="alarm-count">0</span>)</button>
+                    <button class="tab-btn" data-tab="pendentes">Pendentes (<span id="pend-count">0</span>)</button>
+                    <button class="tab-btn" data-tab="sistema">Sistema</button>
+                    <button class="tab-btn" data-tab="usuarios">Usuários</button>
+                    <button class="tab-btn" data-tab="historico">Histórico</button>
+                </div>
+                <table id="events-table">
+                    <thead><tr><th>ID</th><th>Local</th><th>Data</th><th>Hora</th><th>Complemento</th><th>Partição - Local</th><th>Descrição</th></tr></thead>
+                    <tbody id="eventList"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="closeEventModal" class="modal">
+        <div class="modal-content">
+            <h2>Encerrar Evento</h2>
+            <p>Relate os procedimentos adotados:</p>
+            <textarea id="procedureText" placeholder="Digite os procedimentos aqui..."></textarea>
+            <button id="confirmCloseEvent">✅ Encerrar</button>
+            <button id="cancelCloseEvent">❌ Cancelar</button>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+    <script>
+        function setupToggle(headerId, contentId) {
+            const header = document.getElementById(headerId);
+            const content = document.getElementById(contentId);
+            header.addEventListener('click', () => {
+                header.classList.toggle('collapsed');
+                content.classList.toggle('collapsed');
+            });
+        }
+
+        setupToggle('control-header', 'control-content');
+        setupToggle('events-header', 'events-content');
+    </script>
+</body>
+</html>
