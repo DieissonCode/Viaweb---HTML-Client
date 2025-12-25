@@ -1,4 +1,5 @@
 ﻿// main.js
+import { getUnits } from './units-db.js';
 import { ViawebCrypto } from './crypto.js';
 import { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } from './config.js';
 
@@ -29,7 +30,25 @@ let activePendentes = new Map(); // chave: `${local}-${cod}-${zona}`, valor: {fi
 
 let selectedEvent = null;
 let debounceTimeout;
-let units = [{ value: "", text: "Selecione uma unidade" }];
+//let units = [{ value: "", text: "Selecione uma unidade" }];
+(async () => {
+    try {
+        units = await getUnits();
+        populateUnitSelect();
+    } catch (err) {
+        console.error('Erro ao carregar unidades:', err);
+    }
+})();
+
+function populateUnitSelect() {
+    unitSelect.innerHTML = '<option value="">Selecione uma unidade</option>';
+    units.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.value;
+        opt.textContent = `${u.local} (${u.value})`;
+        unitSelect.appendChild(opt);
+    });
+}
 let selectedPendingEvent = null;
 let pendingCommands = new Map();
 let currentClientId = null;
