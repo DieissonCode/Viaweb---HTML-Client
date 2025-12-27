@@ -29,7 +29,7 @@ let activeAlarms = new Map();
 let activePendentes = new Map();
 let selectedEvent = null;
 let debounceTimeout;
-let units = []; // DECLARAÇÃO DA VARIÁVEL UNITS
+let units = [];
 let selectedPendingEvent = null;
 let pendingCommands = new Map();
 let currentClientId = null;
@@ -38,16 +38,15 @@ let reconnectTimer = null;
 const reconnectDelay = 3000;
 let cryptoInstance = null;
 
-// Carregar unidades ao iniciar
 (async () => {
     try {
         console.log('🔄 Carregando unidades...');
         units = await getUnits();
         console.log(`✅ ${units.length} unidades carregadas`);
+        console.log('📋 UNITS COMPLETAS:', JSON.stringify(units, null, 2));
         populateUnitSelect();
     } catch (err) {
         console.error('❌ Erro ao carregar unidades:', err);
-        // Mostra mensagem de erro para o usuário
         unitSelect.innerHTML = '<option value="">Erro ao carregar unidades - Verifique a conexão</option>';
     }
 })();
@@ -280,26 +279,41 @@ function getSelectedZones() {
 
 function armarParticoes(idISEP, particoes, zonas) {
     const cmdId = Date.now();
-    const cmd = { oper: [{ acao: "executar", idISEP, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
+    const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
+    const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
     sendEncrypted(cmd);
 }
 
 function desarmarParticoes(idISEP, particoes) {
     const cmdId = Date.now();
-    const cmd = { oper: [{ acao: "executar", idISEP, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
+    const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
+    const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
     sendEncrypted(cmd);
     setTimeout(() => fetchPartitionsAndZones(idISEP), 5000);
 }
 
 function fetchPartitionsAndZones(idISEP) {
+    console.log('🚀 fetchPartitionsAndZones chamada com idISEP:', idISEP, '| Tipo:', typeof idISEP);
+    
+    // Garante que idISEP seja string de 4 dígitos (sem conversão!)
+    const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
+    console.log('📝 idISEP formatado (sem conversão):', isepFormatted);
+    
     const id1 = Date.now();
     const id2 = id1 + 1;
     pendingCommands.set(id1, resp => resp.resposta && updatePartitions(resp.resposta));
     pendingCommands.set(id2, resp => resp.resposta && updateZones(resp.resposta));
-    sendEncrypted({ oper: [{ acao: "executar", idISEP, id: id1, comando: [{ cmd: "particoes" }] }] });
-    sendEncrypted({ oper: [{ acao: "executar", idISEP, id: id2, comando: [{ cmd: "zonas" }] }] });
+    
+    const cmd1 = { oper: [{ acao: "executar", idISEP: isepFormatted, id: id1, comando: [{ cmd: "particoes" }] }] };
+    const cmd2 = { oper: [{ acao: "executar", idISEP: isepFormatted, id: id2, comando: [{ cmd: "zonas" }] }] };
+    
+    console.log('📤 Comando 1 (partições):', JSON.stringify(cmd1));
+    console.log('📤 Comando 2 (zonas):', JSON.stringify(cmd2));
+    
+    sendEncrypted(cmd1);
+    sendEncrypted(cmd2);
 }
 
 function updateStatus(connected) {
@@ -375,17 +389,27 @@ function connectWebSocket() {
 }
 
 unitSelect.addEventListener('change', () => {
-    const val = parseInt(unitSelect.value);
-    const unit = units.find(u => parseInt(u.value) === val);
+    const val = unitSelect.value; // Mantém como string
+    console.log('🔍 ===== SELEÇÃO DE UNIDADE =====');
+    console.log('📌 Value do select:', val, '| Tipo:', typeof val);
+    
+    const unit = units.find(u => String(u.value) === String(val));
+    console.log('📌 Unidade encontrada:', unit);
+    
     if (unit) {
-        selectedEvent = { idISEP: unit.value };
-        currentClientId = unit.value;
+        selectedEvent = { idISEP: String(unit.value) };
+        currentClientId = String(unit.value);
         clientNumber.textContent = unit.local || unit.label;
         armButton.disabled = disarmButton.disabled = false;
-        fetchPartitionsAndZones(unit.value);
+        
+        console.log('📤 idISEP que será enviado:', unit.value);
+        console.log('🔍 Tipo do idISEP:', typeof unit.value);
+        console.log('🔍 selectedEvent:', selectedEvent);
+        
+        fetchPartitionsAndZones(String(unit.value));
         if (autoUpdateCheckbox.checked) {
             clearInterval(updateInterval);
-            updateInterval = setInterval(() => fetchPartitionsAndZones(unit.value), 30000);
+            updateInterval = setInterval(() => fetchPartitionsAndZones(String(unit.value)), 30000);
         }
     } else {
         selectedEvent = null;
@@ -395,6 +419,7 @@ unitSelect.addEventListener('change', () => {
         partitionsList.innerHTML = zonesColumns.innerHTML = '';
         totalZones.textContent = '0';
         clearInterval(updateInterval);
+        console.log('❌ Nenhuma unidade encontrada para o value:', val);
     }
 });
 
