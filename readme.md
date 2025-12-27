@@ -584,4 +584,60 @@ Isso garante que cada mensagem use um IV diferente, aumentando segurança.
 
 ## 📱 Compatibilidade
 
-### Navegado
+### Navegadores Suportados
+
+Chrome/Edge 90+
+Firefox 88+
+Safari 14+
+Opera 76+
+
+Requisitos
+
+WebSocket support
+Web Crypto API
+ES6 Modules
+Fetch API
+Promises/Async-Await
+
+Node.js
+
+Versão: 18+ recomendada
+Módulos: CommonJS (bridge.js) + ES6 (frontend)
+
+
+🔧 Configuração
+Portas Usadas
+
+8080 - WebSocket
+8000 - HTTP estático
+3000 - API REST
+2700 - TCP Viaweb (externa)
+12346 - SQL Server (externa)
+
+Variáveis de Ambiente (Recomendado)
+bashDB_USER=ahk
+DB_PASSWORD=123456
+DB_SERVER=srvvdm-bd\viaweb
+DB_PORT=12346
+TCP_HOST=10.0.20.43
+TCP_PORT=2700
+
+📝 Convenções de Código
+Nomenclatura
+
+camelCase - Variáveis e funções
+PascalCase - Classes
+UPPER_SNAKE_CASE - Constantes
+kebab-case - Arquivos CSS
+
+Estrutura de Funções
+javascript// 1. Validação de entrada
+// 2. Processamento
+// 3. Atualização de estado
+// 4. Atualização de UI
+// 5. Retorno/callback
+Comentários
+
+// - Comentários de linha
+/* */ - Blocos de código
+/** */ - JSDoc para funções exportadas
