@@ -29,7 +29,7 @@ let activeAlarms = new Map();
 let activePendentes = new Map();
 let selectedEvent = null;
 let debounceTimeout;
-let units = [];
+let units = []; // DECLARAÇÃO DA VARIÁVEL UNITS
 let selectedPendingEvent = null;
 let pendingCommands = new Map();
 let currentClientId = null;
@@ -73,11 +73,9 @@ function getLastDigit(id) {
 }
 
 function getPartitionName(pos, clientId) {
-    if (!clientId || parseInt(clientId) <= 20) {
-        return pos;
-    }
-    const lastDigit = getLastDigit(clientId);
-    const name = partitionNames[lastDigit] || "";
+    // Usa APENAS a posição da partição (1-8) para nomear
+    // O clientId é usado SOMENTE nos eventos
+    const name = partitionNames[pos] || "";
     return name ? `${pos} - ${name}` : pos;
 }
 
@@ -251,10 +249,16 @@ function updateEventList() {
 
         tr.innerHTML = `<td>${ev.id||'-'}</td><td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${ev.complemento}</td><td>${partName}</td><td>${desc}</td>`;
 
-        if (item.group) {
-            tr.style.cursor = 'pointer';
-            tr.onclick = () => openCloseModal(item.group, item.type);
-        }
+        // Click no evento seleciona o cliente automaticamente
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => {
+            if (item.group) {
+                openCloseModal(item.group, item.type);
+            } else {
+                // Seleciona cliente do evento
+                selectClientFromEvent(ev);
+            }
+        };
     });
 }
 
@@ -264,14 +268,55 @@ function openCloseModal(group, type) {
     procedureText.focus();
 }
 
-async function sendEncrypted(data) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+function selectClientFromEvent(ev) {
+    const isep = ev.local || ev.clientId;
+    if (!isep) return;
+    
+    console.log('🎯 Selecionando cliente do evento:', isep);
+    
+    // Procura unidade com esse ISEP
+    const unit = units.find(u => String(u.value) === String(isep));
+    
+    if (unit) {
+        // Seleciona no dropdown
+        unitSelect.value = unit.value;
+        // Dispara evento change para carregar dados
+        unitSelect.dispatchEvent(new Event('change'));
+        
+        // Expande seção de controle se estiver fechada
+        const controlHeader = document.getElementById('control-header');
+        const controlContent = document.getElementById('control-content');
+        if (controlHeader.classList.contains('collapsed')) {
+            controlHeader.classList.remove('collapsed');
+            controlContent.classList.remove('collapsed');
+        }
+        
+        // Scroll suave até o controle
+        document.getElementById('control-panel-section').scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start' 
+        });
+        
+        console.log('✅ Cliente selecionado:', unit.local);
+    } else {
+        console.warn('⚠️ Cliente não encontrado na lista:', isep);
+        alert(`Cliente ${isep} não encontrado na lista de unidades`);
+    }
+}
+
+function sendCommand(data) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error('❌ WebSocket não conectado');
+        return false;
+    }
     try {
-        // Envia JSON puro - o bridge vai criptografar
         ws.send(JSON.stringify(data));
-        console.log('📤 JSON enviado para bridge (sem criptografia):', JSON.stringify(data));
+        console.log('📤 Comando enviado para bridge:', JSON.stringify(data));
         return true;
-    } catch (e) { console.error('[ENVIO] Erro:', e); return false; }
+    } catch (e) { 
+        console.error('❌ Erro ao enviar:', e); 
+        return false; 
+    }
 }
 
 function getSelectedPartitions() {
@@ -287,7 +332,7 @@ function armarParticoes(idISEP, particoes, zonas) {
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
-    sendEncrypted(cmd);
+    sendCommand(cmd);
 }
 
 function desarmarParticoes(idISEP, particoes) {
@@ -295,7 +340,7 @@ function desarmarParticoes(idISEP, particoes) {
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
-    sendEncrypted(cmd);
+    sendCommand(cmd);
     setTimeout(() => fetchPartitionsAndZones(idISEP), 5000);
 }
 
@@ -317,8 +362,8 @@ function fetchPartitionsAndZones(idISEP) {
     console.log('📤 Comando 1 (partições):', JSON.stringify(cmd1));
     console.log('📤 Comando 2 (zonas):', JSON.stringify(cmd2));
     
-    sendEncrypted(cmd1);
-    sendEncrypted(cmd2);
+    sendCommand(cmd1);
+    sendCommand(cmd2);
 }
 
 function updateStatus(connected) {
@@ -408,7 +453,7 @@ unitSelect.addEventListener('change', () => {
         fetchPartitionsAndZones(String(unit.value));
         if (autoUpdateCheckbox.checked) {
             clearInterval(updateInterval);
-            updateInterval = setInterval(() => fetchPartitionsAndZones(String(unit.value)), 5000);
+            updateInterval = setInterval(() => fetchPartitionsAndZones(String(unit.value)), 30000);
         }
     } else {
         selectedEvent = null;
@@ -441,7 +486,7 @@ armButton.addEventListener('click', () => selectedEvent && getSelectedPartitions
 disarmButton.addEventListener('click', () => selectedEvent && getSelectedPartitions().length ? desarmarParticoes(selectedEvent.idISEP, getSelectedPartitions()) : alert('Selecione partição'));
 
 autoUpdateCheckbox.addEventListener('change', () => {
-    if (autoUpdateCheckbox.checked && selectedEvent) updateInterval = setInterval(() => fetchPartitionsAndZones(selectedEvent.idISEP), 5000);
+    if (autoUpdateCheckbox.checked && selectedEvent) updateInterval = setInterval(() => fetchPartitionsAndZones(selectedEvent.idISEP), 30000);
     else clearInterval(updateInterval);
 });
 

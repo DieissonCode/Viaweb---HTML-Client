@@ -36,6 +36,50 @@
             margin-bottom: 0 !important;
         }
         #control-panel-section { margin-bottom: 24px; }
+        
+        /* UI Compacta */
+        .compact-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .compact-actions button {
+            flex: 1;
+            min-width: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .quick-select {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .quick-select button {
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+        .zones-compact {
+            max-height: 472px;
+            overflow-y: auto;
+            background: var(--bg-dark);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .zone-inline {
+            display: inline-flex;
+            align-items: center;
+            margin: 4px;
+            padding: 4px 8px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .zone-inline input {
+            margin-right: 4px;
+        }
     </style>
 </head>
 <body>
@@ -56,19 +100,44 @@
                     <input type="text" id="unit-search" placeholder="Pesquisar unidade, ID ou sigla">
                     <select id="unit-select"><option value="">Selecione uma unidade</option></select>
                 </div>
+                
                 <div id="client-info">
                     Cliente: <span id="client-number">Nenhum selecionado</span>
                     <input type="checkbox" id="auto-update">
                     <label for="auto-update">Auto atualizar</label>
-                    <input type="hidden" id="html-version" value="1.1.0">
                 </div>
-                <button id="arm-button" disabled>🛡️ Armar</button>
-                <button id="disarm-button" disabled>🔓 Desarmar</button>
-                <div class="zone-count">Zonas totais: <span id="total-zones">0</span></div>
+
+                <!-- Ações Compactas -->
+                <div class="compact-actions">
+                    <button id="arm-button" disabled>🛡️ Armar Selecionadas</button>
+                    <button id="disarm-button" disabled>🔓 Desarmar Selecionadas</button>
+                    <button id="arm-all-button" disabled>🛡️ Armar Todas</button>
+                    <button id="disarm-all-button" disabled>🔓 Desarmar Todas</button>
+                </div>
+
+                <!-- Seleção Rápida -->
+                <div class="quick-select">
+                    <button id="select-all-partitions" disabled>☑️ Todas Partições</button>
+                    <button id="clear-partitions" disabled>☐ Limpar Partições</button>
+                    <button id="select-all-zones" disabled>☑️ Todas Zonas</button>
+                    <button id="clear-zones" disabled>☐ Limpar Zonas</button>
+                </div>
+
                 <hr>
+
                 <div class="container">
-                    <div id="partitions-list"></div>
-                    <div id="zones-list"><div id="zones-columns"></div></div>
+                    <div>
+                        <h3 style="margin-bottom: 12px;">Partições</h3>
+                        <div id="partitions-list"></div>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 12px;">
+                            Zonas para Inibir (<span id="total-zones">0</span>)
+                        </h3>
+                        <div class="zones-compact">
+                            <div id="zones-columns"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -121,6 +190,43 @@
 
         setupToggle('control-header', 'control-content');
         setupToggle('events-header', 'events-content');
+
+        // Botões de seleção rápida
+        document.addEventListener('DOMContentLoaded', () => {
+            const selectAllPartBtn = document.getElementById('select-all-partitions');
+            const clearPartBtn = document.getElementById('clear-partitions');
+            const selectAllZonesBtn = document.getElementById('select-all-zones');
+            const clearZonesBtn = document.getElementById('clear-zones');
+            const armAllBtn = document.getElementById('arm-all-button');
+            const disarmAllBtn = document.getElementById('disarm-all-button');
+
+            selectAllPartBtn?.addEventListener('click', () => {
+                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+            });
+
+            clearPartBtn?.addEventListener('click', () => {
+                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = false);
+            });
+
+            selectAllZonesBtn?.addEventListener('click', () => {
+                document.querySelectorAll('#zones-columns input[type="checkbox"]').forEach(cb => cb.checked = true);
+            });
+
+            clearZonesBtn?.addEventListener('click', () => {
+                document.querySelectorAll('#zones-columns input[type="checkbox"]').forEach(cb => cb.checked = false);
+            });
+
+            // Armar/Desarmar todas as partições
+            armAllBtn?.addEventListener('click', () => {
+                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+                document.getElementById('arm-button')?.click();
+            });
+
+            disarmAllBtn?.addEventListener('click', () => {
+                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+                document.getElementById('disarm-button')?.click();
+            });
+        });
     </script>
 </body>
 </html>

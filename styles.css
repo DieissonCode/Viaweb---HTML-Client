@@ -87,7 +87,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 #total-zones { color: var(--primary-light); }
 hr { border: none; border-top: 2px solid var(--border); margin: 24px 0; }
 .container { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; }
-#partitions-list, #zones-list { background: var(--bg-dark); padding: 20px; border-radius: 8px; }
+#partitions-list, #zones-list { background: var(--bg-dark); padding: 10px; border-radius: 8px; }
 .partition-item, .zone-item { 
     padding: 10px; 
     margin-bottom: 8px; 
