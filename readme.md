@@ -134,7 +134,6 @@ node test-db.js
 - `getSelectedPartitions()` - Retorna IDs das partições marcadas
 - `getSelectedZones()` - Retorna IDs das zonas marcadas
 - `openCloseModal(group, type)` - Abre modal para encerrar evento
-- `filterEvents(term)` - Filtra eventos por termo de busca
 
 **Event Listeners:**
 - `unitSelect.change` - Quando seleciona unidade, carrega dados

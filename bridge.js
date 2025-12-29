@@ -60,13 +60,13 @@ function hexToBuffer(hexString) {
 async function connectDatabase() {
     try {
         if (!dbPool) {
-            console.log('🔌 Conectando ao banco de dados...');
+            console.log('🔌 Bridge — Conectando ao banco de dados...');
             dbPool = await mssql.connect(dbConfig);
-            console.log('✅ Banco de dados conectado');
+            console.log('✅ Bridge — Banco de dados conectado');
         }
         return dbPool;
     } catch (err) {
-        console.error('❌ Erro ao conectar ao banco:', err.message);
+        console.error('❌ Bridge — Erro ao conectar ao banco:', err.message);
         throw err;
     }
 }
@@ -99,9 +99,9 @@ function startApiServer() {
                     success: true,
                     data: result.recordset
                 }));
-                console.log(`✅ Retornadas ${result.recordset.length} unidades`);
+                console.log(`✅ Bridge — Retornadas ${result.recordset.length} unidades`);
             } catch (err) {
-                console.error('❌ Erro ao buscar unidades:', err);
+                console.error('❌ Bridge — Erro ao buscar unidades:', err);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     success: false,
@@ -115,8 +115,8 @@ function startApiServer() {
     });
 
     server.listen(API_PORT, () => {
-        console.log(`🌐 API REST rodando na porta ${API_PORT}`);
-        console.log(`📍 Endpoint: http://localhost:${API_PORT}/api/units`);
+        console.log(`🌐 Bridge — API REST rodando na porta ${API_PORT}`);
+        console.log(`📍 Bridge — Endpoint: http://localhost:${API_PORT}/api/units`);
     });
 }
 
@@ -125,13 +125,13 @@ function startHttpServerAndOpenBrowser() {
     const projectDir = path.resolve(__dirname);
     const command = `python -m http.server ${HTTP_PORT} --directory "${projectDir}"`;
     
-    console.log(`🌐 Iniciando servidor HTTP local na porta ${HTTP_PORT}...`);
+    console.log(`🌐 Bridge — Iniciando servidor HTTP local na porta ${HTTP_PORT}...`);
     const serverProcess = exec(command, (error) => {
         if (error) console.error('Erro ao iniciar servidor HTTP:', error);
     });
 
-    serverProcess.stdout.on('data', (data) => console.log(data.trim()));
-    serverProcess.stderr.on('data', (data) => console.error(data.trim()));
+    serverProcess.stdout.on('data', (data) => console.log(`🌐 Bridge — ${data.trim()}`));
+    serverProcess.stderr.on('data', (data) => console.error(`🌐 Bridge — ${data.trim()}`));
 
     setTimeout(() => {
         const openCommand = process.platform === 'win32' 
@@ -141,35 +141,35 @@ function startHttpServerAndOpenBrowser() {
             : `xdg-open http://localhost:${HTTP_PORT}/index.html`;
         
         exec(openCommand);
-        console.log(`🌐 Navegador aberto em http://localhost:${HTTP_PORT}/index.html`);
+        console.log(`🌐 Bridge — Navegador aberto em http://localhost:${HTTP_PORT}/index.html`);
     }, 1000);
 }
 
 // WebSocket Server
 const wss = new WebSocket.Server({ port: WS_PORT });
 
-console.log(`🚀 Servidor Bridge iniciado na porta ${WS_PORT}`);
-console.log(`🔗 Redirecionando para ${TCP_HOST}:${TCP_PORT}`);
+console.log(`🚀 Bridge — Servidor Bridge iniciado na porta ${WS_PORT}`);
+console.log(`🔗 Bridge — Redirecionando para ${TCP_HOST}:${TCP_PORT}`);
 
 startApiServer();
 startHttpServerAndOpenBrowser();
 
 wss.on('connection', (ws) => {
     const connTime = new Date().toLocaleTimeString();
-    console.log(`\n📱 [${connTime}] Cliente WebSocket conectado`);
+    console.log(`\n📱 Bridge — [${connTime}] Cliente WebSocket conectado`);
 
     let wsIvSend = hexToBuffer(IV);
     let wsIvRecv = hexToBuffer(IV);
     const wsKeyBuffer = hexToBuffer(CHAVE);
 
     if (!globalTcpClient || globalTcpClient.destroyed) {
-        console.log('🔄 Criando NOVA conexão TCP única');
+        console.log('🔄 Bridge — Criando NOVA conexão TCP única');
         globalIvSend = hexToBuffer(IV);
         globalIvRecv = hexToBuffer(IV);
         globalKeyBuffer = hexToBuffer(CHAVE);
         
         globalTcpClient = net.createConnection({ host: TCP_HOST, port: TCP_PORT }, () => {
-            console.log('✅ TCP ÚNICO conectado');
+            console.log('✅ Bridge — TCP ÚNICO conectado');
             if (!tcpIdentSent) {
                 setTimeout(async () => {
                     const randomNum = Math.floor(Math.random() * 999999) + 1;
@@ -188,7 +188,7 @@ wss.on('connection', (ws) => {
                     globalIvSend = encrypted.slice(-16);
                     globalTcpClient.write(encrypted);
                     tcpIdentSent = true;
-                    console.log('✅ IDENT enviado (1x)');
+                    console.log('✅ Bridge — IDENT enviado (1x)');
                 }, 100);
             }
         });
@@ -197,20 +197,20 @@ wss.on('connection', (ws) => {
             try {
                 const decrypted = decrypt(data, globalKeyBuffer, globalIvRecv);
                 globalIvRecv = data.slice(-16);
-                console.log('📩 TCP→WS (JSON):', decrypted);
+                console.log('📩 Bridge — TCP→WS (JSON):', decrypted);
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
                         client.send(decrypted);
                     }
                 });
             } catch (e) {
-                console.error('❌ Decrypt TCP→WS falhou:', e.message);
+                console.error('❌ Bridge — Decrypt TCP→WS falhou:', e.message);
             }
         });
         
-        globalTcpClient.on('error', (err) => console.error('❌ Erro TCP:', err.message));
+        globalTcpClient.on('error', (err) => console.error('❌ Bridge — Erro TCP:', err.message));
         globalTcpClient.on('close', () => {
-            console.log('🔴 Conexão TCP fechada');
+            console.log('🔴 Bridge — Conexão TCP fechada');
             globalTcpClient = null;
             tcpIdentSent = false;
         });
@@ -219,12 +219,12 @@ wss.on('connection', (ws) => {
     ws.on('message', (data) => {
         try {
             const jsonStr = data.toString();
-            console.log('📤 WS→TCP (JSON recebido):', jsonStr);
+            console.log('📤 Bridge — WS→TCP (JSON recebido):', jsonStr);
             if (globalTcpClient && globalTcpClient.writable) {
                 const encrypted = encrypt(jsonStr, globalKeyBuffer, globalIvSend);
                 globalIvSend = encrypted.slice(-16);
                 globalTcpClient.write(encrypted);
-                console.log('✅ Enviado para TCP (criptografado)');
+                console.log('✅ Bridge — Enviado para TCP (criptografado)');
             } else {
                 console.error('❌ TCP não disponível para envio');
             }
@@ -233,23 +233,21 @@ wss.on('connection', (ws) => {
         }
     });
 
-    ws.on('close', () => console.log(`🔴 [${new Date().toLocaleTimeString()}] Cliente WebSocket desconectado`));
-    ws.on('error', (err) => console.error('❌ Erro WebSocket:', err.message));
+    ws.on('close', () => console.log(`🔴 Bridge — [${new Date().toLocaleTimeString()}] Cliente WebSocket desconectado`));
+    ws.on('error', (err) => console.error('❌ Bridge — Erro WebSocket:', err.message));
 });
 
-wss.on('error', (err) => console.error('❌ Erro no servidor:', err.message));
-
-console.log('\n💡 No HTML, conecte em: ws://localhost:8080');
-console.log(`🌐 Página aberta automaticamente em http://localhost:${HTTP_PORT}/index.html`);
-console.log(`🔌 API REST disponível em http://localhost:${API_PORT}/api/units`);
-console.log('📊 Logs detalhados ativados\n');
-
+wss.on('error', (err) => console.error('❌ Bridge — Erro no servidor:', err.message));
+console.log('\n💡 Bridge — No HTML, conecte em: ws://localhost:8080');
+console.log(`🌐 Bridge — Página aberta automaticamente em http://localhost:${HTTP_PORT}/index.html`);
+console.log(`🔌 Bridge — API REST disponível em http://localhost:${API_PORT}/api/units`);
+console.log('📊 Bridge — Logs detalhados ativados\n');
 // Tratamento de encerramento
 process.on('SIGINT', async () => {
-    console.log('\n🛑 Encerrando servidor...');
+    console.log('\n🛑 Bridge — Encerrando servidor...');
     if (dbPool) {
         await dbPool.close();
-        console.log('✅ Conexão com banco fechada');
+        console.log('✅ Bridge — Conexão com banco fechada');
     }
     process.exit(0);
 });

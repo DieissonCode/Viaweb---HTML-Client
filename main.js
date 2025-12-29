@@ -38,6 +38,7 @@ let reconnectTimer = null;
 const reconnectDelay = 3000;
 let cryptoInstance = null;
 
+// Carregar unidades ao iniciar
 (async () => {
     try {
         console.log('🔄 Carregando unidades...');
@@ -47,6 +48,7 @@ let cryptoInstance = null;
         populateUnitSelect();
     } catch (err) {
         console.error('❌ Erro ao carregar unidades:', err);
+        // Mostra mensagem de erro para o usuário
         unitSelect.innerHTML = '<option value="">Erro ao carregar unidades - Verifique a conexão</option>';
     }
 })();
@@ -236,6 +238,8 @@ function updateEventList() {
         tr.className = `event-row ${ev.extraClass || ''}`;
         const cod = ev.codigoEvento;
         if (cod === '1130') tr.classList.add('alarm');
+        else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline'); // Cliente offline
+        else if (cod === '3AA6') tr.classList.add('online'); // Cliente online
         else if (cod.startsWith('3')) tr.classList.add('restauro');
         else if (falhaCodes.includes(cod)) tr.classList.add('falha');
         else if (armDisarmCodes.includes(cod)) tr.classList.add('armedisarm');
@@ -261,12 +265,13 @@ function openCloseModal(group, type) {
 }
 
 async function sendEncrypted(data) {
-    if (!ws || ws.readyState !== WebSocket.OPEN || !cryptoInstance) return false;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
     try {
-        const encrypted = await cryptoInstance.encrypt(JSON.stringify(data));
-        ws.send(encrypted);
+        // Envia JSON puro - o bridge vai criptografar
+        ws.send(JSON.stringify(data));
+        console.log('📤 JSON enviado para bridge (sem criptografia):', JSON.stringify(data));
         return true;
-    } catch (e) { console.error('[CRYPTO] Erro envio:', e); return false; }
+    } catch (e) { console.error('[ENVIO] Erro:', e); return false; }
 }
 
 function getSelectedPartitions() {
@@ -333,21 +338,16 @@ function connectWebSocket() {
         clearTimeout(reconnectTimer);
         updateStatus(true);
         armButton.disabled = disarmButton.disabled = true;
-        await initCrypto();
-        console.log('[WS] Criptografia inicializada');
+        // Não precisa mais inicializar crypto - bridge faz isso
+        console.log('[WS] Pronto para enviar');
     };
 
     ws.onmessage = async (event) => {
         console.log('[WS] Mensagem recebida:', event.data);
         try {
-            let data;
-            if (typeof event.data === 'string') {
-                data = JSON.parse(event.data);
-            } else {
-                const decrypted = await cryptoInstance.decrypt(event.data);
-                data = JSON.parse(decrypted);
-            }
-            console.log('[WS] Dados decifrados:', data);
+            // Bridge já descriptografou - recebe JSON puro
+            const data = JSON.parse(event.data);
+            console.log('[WS] Dados recebidos:', data);
 
             if (data.oper && Array.isArray(data.oper)) {
                 for (const op of data.oper) {
@@ -379,7 +379,6 @@ function connectWebSocket() {
         armButton.disabled = disarmButton.disabled = true;
         partitionsList.innerHTML = zonesColumns.innerHTML = '';
         totalZones.textContent = '0';
-        clearInterval(updateInterval);
         cryptoInstance = null;
         reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
         console.log(`[WS] Reconectando em ${reconnectDelay/1000}s...`);
@@ -409,7 +408,7 @@ unitSelect.addEventListener('change', () => {
         fetchPartitionsAndZones(String(unit.value));
         if (autoUpdateCheckbox.checked) {
             clearInterval(updateInterval);
-            updateInterval = setInterval(() => fetchPartitionsAndZones(String(unit.value)), 30000);
+            updateInterval = setInterval(() => fetchPartitionsAndZones(String(unit.value)), 5000);
         }
     } else {
         selectedEvent = null;
@@ -442,7 +441,7 @@ armButton.addEventListener('click', () => selectedEvent && getSelectedPartitions
 disarmButton.addEventListener('click', () => selectedEvent && getSelectedPartitions().length ? desarmarParticoes(selectedEvent.idISEP, getSelectedPartitions()) : alert('Selecione partição'));
 
 autoUpdateCheckbox.addEventListener('change', () => {
-    if (autoUpdateCheckbox.checked && selectedEvent) updateInterval = setInterval(() => fetchPartitionsAndZones(selectedEvent.idISEP), 30000);
+    if (autoUpdateCheckbox.checked && selectedEvent) updateInterval = setInterval(() => fetchPartitionsAndZones(selectedEvent.idISEP), 5000);
     else clearInterval(updateInterval);
 });
 
