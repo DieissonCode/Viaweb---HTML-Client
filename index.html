@@ -4,82 +4,187 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Viaweb - Cotrijal</title>
+    <!-- Favicon básico -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
+    <!-- Fallback para navegadores antigos -->
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+
+    <!-- Apple Touch Icon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+
+    <!-- Android Chrome -->
+    <link rel="manifest" href="site.webmanifest">
     <link rel="stylesheet" href="styles.css">
     <style>
+        body {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            transition: grid-template-columns 0.4s ease;
+        }
+        #top-header {
+            grid-column: 1 / -1;
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 20px 20px 0px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px var(--shadow);
+        }
+        body.both-open #top-header { font-size: 1.5rem; }
+
+        #status-icon { width: 12px; height: 12px; border-radius: 50%; animation: pulse 2s infinite; }
+        .connected #status-icon { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .disconnected #status-icon { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .panels-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panels-container.left-closed { grid-template-columns: 80px 1fr; }
+        .panels-container.right-closed { grid-template-columns: 1fr 80px; }
+
+        .panel {
+            background: var(--bg-card);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px var(--shadow);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+            transition: all 0.4s ease;
+        }
+
+        .panel.closed .section-content { display: none; }
+
         .section-header {
             background: var(--bg-dark);
             padding: 12px 16px;
-            border-radius: 8px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 8px;
             user-select: none;
+            min-width: 60px;
+            border-radius: 12px;
         }
-        .section-header .toggle-arrow {
+
+        .header-title {
+            font-weight: 600;
             font-size: 18px;
+        }
+
+        .header-title-vertical {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-size: 18px;
+            margin: auto;
+        }
+
+        .toggle-arrow {
+            font-size: 24px;
             transition: transform 0.3s ease;
         }
-        .section-header.collapsed .toggle-arrow {
-            transform: rotate(-90deg);
-        }
+
+        .panel-left .toggle-arrow { transform: rotate(0deg); }
+        .panel-right .toggle-arrow { transform: rotate(0deg); }
+
+        .panel-left.closed .toggle-arrow { transform: rotate(180deg); }
+        .panel-right.closed .toggle-arrow { transform: rotate(180deg); }
+
         .section-content {
-            transition: max-height 0.4s ease, opacity 0.3s ease, margin-bottom 0.4s ease;
-            max-height: 2000px;
-            opacity: 1;
-            overflow: hidden;
-        }
-        .section-content.collapsed {
-            max-height: 0;
-            opacity: 0;
-            margin-bottom: 0 !important;
-        }
-        #control-panel-section { margin-bottom: 24px; }
-        
-        /* UI Compacta */
-        .compact-actions {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }
-        .compact-actions button {
             flex: 1;
-            min-width: 120px;
+            overflow: auto;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
+            flex-direction: column;
         }
-        .quick-select {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-        .quick-select button {
-            padding: 8px 12px;
-            font-size: 12px;
-        }
-        .zones-compact {
-            max-height: 472px;
-            overflow-y: auto;
-            background: var(--bg-dark);
-            padding: 10px;
-            border-radius: 8px;
-        }
-        .zone-inline {
-            display: inline-flex;
-            align-items: center;
-            margin: 4px;
-            padding: 4px 8px;
-            background: var(--bg-card);
-            border-radius: 4px;
+        #control-panel { padding: 24px; height: 100%; display: flex; flex-direction: column; }
+        #events-container { padding: 24px; height: 100%; display: flex; flex-direction: column; }
+
+        /* Tabela eventos compacta quando ambos abertos */
+        body.both-open #events-table td,
+        body.both-open #events-table th {
+            padding: 8px 6px;
             font-size: 13px;
         }
-        .zone-inline input {
-            margin-right: 4px;
+        body.one-panel-open #events-table td,
+        body.one-panel-open #events-table th {
+            padding: 12px;
+            font-size: 14px;
         }
+
+        /* Partições e zonas compactas quando ambos abertos */
+        body.both-open .partition-item,
+        body.both-open .zone-item {
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+
+        body.both-open .partition-item label,
+        body.both-open .zone-item label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        body.both-open .mono-number {
+            font-size: 14px;
+        }
+
+        body.both-open .partition-status,
+        body.both-open .zone-status {
+            font-size: 11px;
+            padding: 2px 6px;
+        }
+
+        body.one-panel-open .partition-item,
+        body.one-panel-open .zone-item {
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        body.one-panel-open .partition-status,
+        body.one-panel-open .zone-status {
+            font-size: 12px;
+            padding: 4px 10px;
+        }
+
+        /* Botões ao lado dos títulos */
+        .section-with-button {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .section-with-button h3 {
+            margin: 0;
+        }
+        .section-with-button button {
+            font-size: 12px;
+            padding: 6px 10px;
+        }
+
+        /* UI Compacta */
+        .compact-actions { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .compact-actions button { flex: 1; min-width: 120px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .quick-select { display: none; } /* escondido pois botões movidos */
+        .zones-compact { max-height: 472px; overflow-y: auto; background: var(--bg-dark); padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body>
@@ -88,81 +193,89 @@
         <span id="status-icon"></span>
     </h1>
 
-    <div id="control-panel-section">
-        <div class="section-header collapsed" id="control-header">
-            <strong>Centrais de Alarme</strong>
-            <span class="toggle-arrow">▼</span>
-        </div>
-        <div class="section-content collapsed" id="control-content">
-            <div id="control-panel">
-                <div id="unit-select-container">
-                    <label for="unit-search">Unidade:</label>
-                    <input type="text" id="unit-search" placeholder="Pesquisar unidade, ID ou sigla">
-                    <select id="unit-select"><option value="">Selecione uma unidade</option></select>
-                </div>
-                
-                <div id="client-info">
-                    Cliente: <span id="client-number">Nenhum selecionado</span>
-                    <input type="checkbox" id="auto-update">
-                    <label for="auto-update">Auto atualizar</label>
-                </div>
-
-                <!-- Ações Compactas -->
-                <div class="compact-actions">
-                    <button id="arm-button" disabled>🛡️ Armar Selecionadas</button>
-                    <button id="disarm-button" disabled>🔓 Desarmar Selecionadas</button>
-                    <button id="arm-all-button" disabled>🛡️ Armar Todas</button>
-                    <button id="disarm-all-button" disabled>🔓 Desarmar Todas</button>
-                </div>
-
-                <!-- Seleção Rápida -->
-                <div class="quick-select">
-                    <button id="select-all-partitions" disabled>☑️ Todas Partições</button>
-                    <button id="clear-partitions" disabled>☐ Limpar Partições</button>
-                    <button id="select-all-zones" disabled>☑️ Todas Zonas</button>
-                    <button id="clear-zones" disabled>☐ Limpar Zonas</button>
-                </div>
-
-                <hr>
-
-                <div class="container">
-                    <div>
-                        <h3 style="margin-bottom: 12px;">Partições</h3>
-                        <div id="partitions-list"></div>
+    <div class="panels-container" id="panels-container">
+        <div class="panel panel-left" id="control-panel-section">
+            <div class="section-header" id="control-header">
+                <span class="toggle-arrow">◄</span>
+                <div class="header-title">Centrais de Alarme</div>
+                <div class="header-title header-title-vertical">Centrais de Alarme</div>
+            </div>
+            <div class="section-content" id="control-content">
+                <div id="control-panel">
+                    <div id="unit-select-container">
+                        <label for="unit-search">Unidade:</label>
+                        <input type="text" id="unit-search" placeholder="Pesquisar unidade, ID ou sigla">
+                        <select id="unit-select" size="3"></select>
                     </div>
-                    <div>
-                        <h3 style="margin-bottom: 12px;">
-                            Zonas para Inibir (<span id="total-zones">0</span>)
-                        </h3>
-                        <div class="zones-compact">
-                            <div id="zones-columns"></div>
+                    
+                    <div id="client-info">
+                        Cliente: <span id="client-number">Nenhum selecionado</span>
+                        <input type="checkbox" id="auto-update">
+                        <label for="auto-update">Auto atualizar</label>
+                    </div>
+
+                    <div class="compact-actions">
+                        <button id="arm-button" disabled>🛡️ Armar</button>
+                        <button id="disarm-button" disabled>🔓 Desarmar</button>
+                        <button id="arm-all-button" disabled>🛡️ Armar Todas</button>
+                        <button id="disarm-all-button" disabled>🔓 Desarmar Todas</button>
+                    </div>
+
+                    <hr>
+
+                    <div class="container">
+                        <div>
+                            <div class="section-with-button">
+                                <h3>Partições</h3>
+                                <button id="toggle-partitions" disabled>☑️ Todas</button>
+                            </div>
+                            <div id="partitions-list"></div>
+                        </div>
+                        <div>
+                            <div class="section-with-button">
+                                <h3>Zonas para Inibir (<span id="total-zones">0</span>)</h3>
+                                <button id="toggle-zones" disabled>☑️ Todas</button>
+                            </div>
+                            <div class="zones-compact">
+                                <div id="zones-columns"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <div id="events-section">
-        <div class="section-header" id="events-header">
-            <strong>Eventos</strong>
-            <span class="toggle-arrow">▼</span>
-        </div>
-        <div class="section-content" id="events-content">
-            <div id="events-container">
-                <input type="text" id="events-filter" placeholder="Filtrar eventos...">
-                <div id="events-tabs">
-                    <button class="tab-btn active" data-tab="all">Todos</button>
-                    <button class="tab-btn" data-tab="alarms">Disparos (<span id="alarm-count">0</span>)</button>
-                    <button class="tab-btn" data-tab="pendentes">Pendentes (<span id="pend-count">0</span>)</button>
-                    <button class="tab-btn" data-tab="sistema">Sistema</button>
-                    <button class="tab-btn" data-tab="usuarios">Usuários</button>
-                    <button class="tab-btn" data-tab="historico">Histórico</button>
+        <div class="panel panel-right" id="events-section">
+            <div class="section-header" id="events-header">
+                <div class="header-title">Eventos</div>
+                <div class="header-title header-title-vertical">Eventos</div>
+                <span class="toggle-arrow">►</span>
+            </div>
+            <div class="section-content" id="events-content">
+                <div id="events-container">
+                    <input type="text" id="events-filter" placeholder="Filtrar eventos...">
+                    <div id="events-tabs">
+                        <button class="tab-btn active" data-tab="all">Todos</button>
+                        <button class="tab-btn" data-tab="alarms">Disparos (<span id="alarm-count">0</span>)</button>
+                        <button class="tab-btn" data-tab="pendentes">Pendentes (<span id="pend-count">0</span>)</button>
+                        <button class="tab-btn" data-tab="sistema">Sistema</button>
+                        <button class="tab-btn" data-tab="usuarios">Usuários</button>
+                        <button class="tab-btn" data-tab="historico">Histórico</button>
+                    </div>
+                    <table id="events-table">
+                        <thead>
+                            <tr>
+                                <th>ISEP</th>
+                                <th>Data</th>
+                                <th>Hora</th>
+                                <th>Complemento</th>
+                                <th>Partição</th>
+                                <th>Descrição</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventList"></tbody>
+                    </table>
                 </div>
-                <table id="events-table">
-                    <thead><tr><th>ID</th><th>Local</th><th>Data</th><th>Hora</th><th>Complemento</th><th>Partição - Local</th><th>Descrição</th></tr></thead>
-                    <tbody id="eventList"></tbody>
-                </table>
             </div>
         </div>
     </div>
@@ -179,54 +292,80 @@
 
     <script type="module" src="main.js"></script>
     <script>
-        function setupToggle(headerId, contentId) {
-            const header = document.getElementById(headerId);
-            const content = document.getElementById(contentId);
-            header.addEventListener('click', () => {
-                header.classList.toggle('collapsed');
-                content.classList.toggle('collapsed');
+        const body = document.body;
+        const panelsContainer = document.getElementById('panels-container');
+        const leftPanel = document.getElementById('control-panel-section');
+        const rightPanel = document.getElementById('events-section');
+        const unitSelect = document.getElementById('unit-select');
+
+        function updateLayout() {
+            panelsContainer.classList.remove('left-closed', 'right-closed');
+            body.classList.remove('both-open', 'one-panel-open');
+
+            const leftClosed = leftPanel.classList.contains('closed');
+            const rightClosed = rightPanel.classList.contains('closed');
+
+            if (leftClosed && rightClosed) {
+                leftPanel.classList.remove('closed');
+            }
+
+            if (leftClosed) panelsContainer.classList.add('left-closed');
+            if (rightClosed) panelsContainer.classList.add('right-closed');
+
+            if (!leftClosed && !rightClosed) {
+                body.classList.add('both-open');
+            } else {
+                body.classList.add('one-panel-open');
+            }
+
+            document.querySelectorAll('.header-title').forEach(t => t.style.display = 'none');
+            document.querySelectorAll('.header-title:not(.header-title-vertical)').forEach(t => {
+                if (!t.closest('.panel').classList.contains('closed')) t.style.display = 'block';
+            });
+            document.querySelectorAll('.header-title-vertical').forEach(t => {
+                if (t.closest('.panel').classList.contains('closed')) t.style.display = 'block';
             });
         }
 
-        setupToggle('control-header', 'control-content');
-        setupToggle('events-header', 'events-content');
+        function handleClick(clickedPanel, otherPanel) {
+            const clickedClosed = clickedPanel.classList.contains('closed');
+            const otherClosed = otherPanel.classList.contains('closed');
 
-        // Botões de seleção rápida
-        document.addEventListener('DOMContentLoaded', () => {
-            const selectAllPartBtn = document.getElementById('select-all-partitions');
-            const clearPartBtn = document.getElementById('clear-partitions');
-            const selectAllZonesBtn = document.getElementById('select-all-zones');
-            const clearZonesBtn = document.getElementById('clear-zones');
-            const armAllBtn = document.getElementById('arm-all-button');
-            const disarmAllBtn = document.getElementById('disarm-all-button');
+            if (!clickedClosed && !otherClosed) {
+                clickedPanel.classList.add('closed');
+            } else if (!clickedClosed && otherClosed) {
+                clickedPanel.classList.add('closed');
+                otherPanel.classList.remove('closed');
+            } else if (clickedClosed && !otherClosed) {
+                clickedPanel.classList.remove('closed');
+            }
 
-            selectAllPartBtn?.addEventListener('click', () => {
-                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
-            });
+            updateLayout();
+        }
 
-            clearPartBtn?.addEventListener('click', () => {
-                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = false);
-            });
-
-            selectAllZonesBtn?.addEventListener('click', () => {
-                document.querySelectorAll('#zones-columns input[type="checkbox"]').forEach(cb => cb.checked = true);
-            });
-
-            clearZonesBtn?.addEventListener('click', () => {
-                document.querySelectorAll('#zones-columns input[type="checkbox"]').forEach(cb => cb.checked = false);
-            });
-
-            // Armar/Desarmar todas as partições
-            armAllBtn?.addEventListener('click', () => {
-                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
-                document.getElementById('arm-button')?.click();
-            });
-
-            disarmAllBtn?.addEventListener('click', () => {
-                document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
-                document.getElementById('disarm-button')?.click();
-            });
+        document.getElementById('control-header').addEventListener('click', () => {
+            handleClick(leftPanel, rightPanel);
         });
+
+        document.getElementById('events-header').addEventListener('click', () => {
+            handleClick(rightPanel, leftPanel);
+        });
+
+        unitSelect.addEventListener('wheel', (e) => {
+            e.preventDefault();
+
+            const delta = e.deltaY > 0 ? 1 : -1;
+            let newIndex = unitSelect.selectedIndex + delta;
+
+            if (newIndex < 0) newIndex = 0;
+            if (newIndex >= unitSelect.options.length) newIndex = unitSelect.options.length - 1;
+
+            unitSelect.selectedIndex = newIndex;
+            unitSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        updateLayout();
     </script>
+    <script src="hot-reload.js"></script>
 </body>
 </html>

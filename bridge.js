@@ -146,7 +146,7 @@ function startHttpServerAndOpenBrowser() {
 }
 
 // WebSocket Server
-const wss = new WebSocket.Server({ port: WS_PORT });
+const wss = new WebSocket.Server({ host: '0.0.0.0', port: WS_PORT });
 
 console.log(`🚀 Bridge — Servidor Bridge iniciado na porta ${WS_PORT}`);
 console.log(`🔗 Bridge — Redirecionando para ${TCP_HOST}:${TCP_PORT}`);

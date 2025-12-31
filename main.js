@@ -1,4 +1,6 @@
 ﻿// main.js
+const WS_HOST = window.location.hostname || 'localhost';
+const WS_URL = `ws://${WS_HOST}:8090`;
 import { getUnits } from './units-db.js';
 import { ViawebCrypto } from './crypto.js';
 import { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } from './config.js';
@@ -21,6 +23,10 @@ const eventsFilter = document.getElementById('events-filter');
 const eventList = document.getElementById('eventList');
 const alarmCount = document.getElementById('alarm-count');
 const pendCount = document.getElementById('pend-count');
+const togglePartitionsBtn = document.getElementById('toggle-partitions');
+const toggleZonesBtn = document.getElementById('toggle-zones');
+const armAllButton = document.getElementById('arm-all-button');
+const disarmAllButton = document.getElementById('disarm-all-button');
 
 let updateInterval;
 const maxEvents = 300;
@@ -37,6 +43,8 @@ let ws = null;
 let reconnectTimer = null;
 const reconnectDelay = 3000;
 let cryptoInstance = null;
+let savedPartitions = [];
+let savedZones = [];
 
 // Carregar unidades ao iniciar
 (async () => {
@@ -53,8 +61,26 @@ let cryptoInstance = null;
     }
 })();
 
+// Função para toggle das seções
+function setupToggle(headerId, contentId) {
+    const header = document.getElementById(headerId);
+    const content = document.getElementById(contentId);
+    if (header && content) {
+        header.addEventListener('click', () => {
+            header.classList.toggle('collapsed');
+            content.classList.toggle('collapsed');
+        });
+    }
+}
+
+// Inicializa os toggles quando o DOM carregar
+document.addEventListener('DOMContentLoaded', () => {
+    setupToggle('control-header', 'control-content');
+    setupToggle('events-header', 'events-content');
+});
+
 function populateUnitSelect() {
-    unitSelect.innerHTML = '<option value="">Selecione uma unidade</option>';
+    unitSelect.innerHTML = '';
     units.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u.value;
@@ -73,25 +99,38 @@ function getLastDigit(id) {
 }
 
 function getPartitionName(pos, clientId) {
-    // Usa APENAS a posição da partição (1-8) para nomear
-    // O clientId é usado SOMENTE nos eventos
     const name = partitionNames[pos] || "";
-    return name ? `${pos} - ${name}` : pos;
+    return name ? `[ ${pos} ] - ${name}` : pos;
 }
 
 function updatePartitions(data) {
+    savedPartitions = getSelectedPartitions();
+    
     partitionsList.innerHTML = '';
     data.forEach(p => {
-        const cls = p.armado === 1 ? 'partition-status armado' : 'partition-status desarmado';
+        const cls = p.armado == 1 ? 'partition-status armado' : 'partition-status desarmado';
         const name = getPartitionName(p.pos, currentClientId);
+        const statusText = p.armado == 1 ? 'Armada' : 'Desarmada';
+        
         const div = document.createElement('div');
         div.className = 'partition-item';
-        div.innerHTML = `<input type="checkbox" id="partition-${p.pos}" value="${p.pos}"><label for="partition-${p.pos}">Partição <span class="mono-number">${name}</span>: <span class="${cls}">${p.armado === 1 ? "Armada" : "Desarmada"}</span></label>`;
+        div.innerHTML = `
+        <input type="checkbox" id="partition-${p.pos}" value="${p.pos}">
+        <label for="partition-${p.pos}">
+            <span class="${cls}">${statusText}</span> 
+            ${name}
+        </label>
+        `;
         partitionsList.appendChild(div);
+        
+        if (savedPartitions.includes(p.pos)) {
+            document.getElementById(`partition-${p.pos}`).checked = true;
+        }
     });
 }
 
 function updateZones(data) {
+	savedZones = getSelectedZones();
     totalZones.textContent = data.length;
     zonesColumns.innerHTML = '';
     const perCol = 8;
@@ -112,6 +151,10 @@ function updateZones(data) {
         }
         zonesColumns.appendChild(colDiv);
     }
+	savedZones.forEach(zoneNum => {
+    	const checkbox = document.getElementById(`zone-${zoneNum}`);
+    	if (checkbox) checkbox.checked = true;
+	});
 }
 
 function processEvent(data) {
@@ -247,7 +290,7 @@ function updateEventList() {
         let desc = ev.descricao;
         if (count > 1) desc += ` (${count} eventos)`;
 
-        tr.innerHTML = `<td>${ev.id||'-'}</td><td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${ev.complemento}</td><td>${partName}</td><td>${desc}</td>`;
+        tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${ev.complemento}</td><td>${partName}</td><td>${desc}</td>`;
 
         // Click no evento seleciona o cliente automaticamente
         tr.style.cursor = 'pointer';
@@ -375,7 +418,7 @@ function updateStatus(connected) {
 
 function connectWebSocket() {
     if (ws) ws.close();
-    ws = new WebSocket('ws://localhost:8080');
+    ws = new WebSocket(WS_URL)
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = async () => {
@@ -433,7 +476,7 @@ function connectWebSocket() {
 }
 
 unitSelect.addEventListener('change', () => {
-    const val = unitSelect.value; // Mantém como string
+    const val = unitSelect.value;
     console.log('🔍 ===== SELEÇÃO DE UNIDADE =====');
     console.log('📌 Value do select:', val, '| Tipo:', typeof val);
     
@@ -444,7 +487,14 @@ unitSelect.addEventListener('change', () => {
         selectedEvent = { idISEP: String(unit.value) };
         currentClientId = String(unit.value);
         clientNumber.textContent = unit.local || unit.label;
-        armButton.disabled = disarmButton.disabled = false;
+        
+        // Habilita TODOS os botões
+        armButton.disabled = false;
+        disarmButton.disabled = false;
+        armAllButton.disabled = false;
+        disarmAllButton.disabled = false;
+        togglePartitionsBtn.disabled = false;
+        toggleZonesBtn.disabled = false;
         
         console.log('📤 idISEP que será enviado:', unit.value);
         console.log('🔍 Tipo do idISEP:', typeof unit.value);
@@ -459,8 +509,17 @@ unitSelect.addEventListener('change', () => {
         selectedEvent = null;
         currentClientId = null;
         clientNumber.textContent = "Nenhum selecionado";
-        armButton.disabled = disarmButton.disabled = true;
-        partitionsList.innerHTML = zonesColumns.innerHTML = '';
+        
+        // Desabilita TODOS os botões
+        armButton.disabled = true;
+        disarmButton.disabled = true;
+        armAllButton.disabled = true;
+        disarmAllButton.disabled = true;
+        togglePartitionsBtn.disabled = true;
+        toggleZonesBtn.disabled = true;
+        
+        partitionsList.innerHTML = '';
+        zonesColumns.innerHTML = '';
         totalZones.textContent = '0';
         clearInterval(updateInterval);
         console.log('❌ Nenhuma unidade encontrada para o value:', val);
@@ -471,12 +530,12 @@ unitSearch.addEventListener('input', e => {
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
         const term = e.target.value.toLowerCase();
-        unitSelect.innerHTML = '<option value="">Selecione uma unidade</option>';
+        unitSelect.innerHTML = '';
         units.filter(u => (u.local||'').toLowerCase().includes(term) || (u.value||'').includes(term) || (u.sigla||'').toLowerCase().includes(term))
              .forEach(u => {
                  const opt = document.createElement('option');
                  opt.value = u.value;
-                 opt.textContent = `${u.local} (${u.label})`;
+                 opt.textContent = `${u.local} (${u.value})`;
                  unitSelect.appendChild(opt);
              });
     }, 300);
@@ -523,4 +582,121 @@ cancelCloseEvent.onclick = () => {
     selectedPendingEvent = null;
 };
 
+togglePartitionsBtn.addEventListener('click', () => {
+    const checkboxes = document.querySelectorAll('#partitions-list input[type="checkbox"]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    
+    if (allChecked) {
+        // Se todos estão marcados, desmarca todos
+        checkboxes.forEach(cb => cb.checked = false);
+        togglePartitionsBtn.innerHTML = '☑️ Todas';
+    } else {
+        // Se nem todos estão marcados, marca todos
+        checkboxes.forEach(cb => cb.checked = true);
+        togglePartitionsBtn.innerHTML = '☐ Nenhuma';
+    }
+});
+
+toggleZonesBtn.addEventListener('click', () => {
+    const checkboxes = document.querySelectorAll('#zones-columns input[type="checkbox"]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    
+    if (allChecked) {
+        // Se todos estão marcados, desmarca todos
+        checkboxes.forEach(cb => cb.checked = false);
+        toggleZonesBtn.innerHTML = '☑️ Todas';
+    } else {
+        // Se nem todos estão marcados, marca todos
+        checkboxes.forEach(cb => cb.checked = true);
+        toggleZonesBtn.innerHTML = '☐ Nenhuma';
+    }
+});
+
+armAllButton.addEventListener('click', () => {
+    if (!selectedEvent) {
+        alert('Selecione uma unidade primeiro');
+        return;
+    }
+    // Seleciona todas as partições
+    document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+    
+    // Atualiza texto do toggle de partições
+    const allChecked = Array.from(document.querySelectorAll('#partitions-list input[type="checkbox"]'))
+        .every(cb => cb.checked);
+    if (allChecked) {
+        togglePartitionsBtn.innerHTML = '☐ Nenhuma';
+    } else {
+        togglePartitionsBtn.innerHTML = '☑️ Todas';
+    }
+    
+    const partitions = getSelectedPartitions();
+    const zones = getSelectedZones();
+    
+    if (partitions.length === 0) {
+        alert('Nenhuma partição disponível');
+        return;
+    }
+    
+    if (confirm(`Armar ${partitions.length} partição(ões)?`)) {
+        armarParticoes(selectedEvent.idISEP, partitions, zones);
+    }
+});
+
+disarmAllButton.addEventListener('click', () => {
+    if (!selectedEvent) {
+        alert('Selecione uma unidade primeiro');
+        return;
+    }
+
+    document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
+
+    // Atualiza texto do toggle de partições
+    const allChecked = Array.from(document.querySelectorAll('#partitions-list input[type="checkbox"]'))
+        .every(cb => cb.checked);
+    if (allChecked) {
+        togglePartitionsBtn.innerHTML = '☐ Nenhuma';
+    } else {
+        togglePartitionsBtn.innerHTML = '☑️ Todas';
+    }
+
+    const partitions = getSelectedPartitions();
+    
+    if (partitions.length === 0) {
+        alert('Nenhuma partição disponível');
+        return;
+    }
+    
+    if (confirm(`Desarmar ${partitions.length} partição(ões)?`)) {
+        desarmarParticoes(selectedEvent.idISEP, partitions);
+    }
+});
+
 connectWebSocket();
+
+
+// === EXPORTAÇÕES PARA HOT RELOAD ===
+// Usa getters para manter referências atualizadas
+Object.defineProperty(window, 'allEvents', {
+    get: () => allEvents,
+    set: (val) => { allEvents = val; }
+});
+Object.defineProperty(window, 'activeAlarms', {
+    get: () => activeAlarms,
+    set: (val) => { activeAlarms = val; }
+});
+Object.defineProperty(window, 'activePendentes', {
+    get: () => activePendentes,
+    set: (val) => { activePendentes = val; }
+});
+Object.defineProperty(window, 'currentClientId', {
+    get: () => currentClientId,
+    set: (val) => { currentClientId = val; }
+});
+Object.defineProperty(window, 'selectedEvent', {
+    get: () => selectedEvent,
+    set: (val) => { selectedEvent = val; }
+});
+
+// Funções podem ser exportadas diretamente
+window.updateCounts = updateCounts;
+window.updateEventList = updateEventList;
