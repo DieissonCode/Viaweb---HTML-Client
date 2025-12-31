@@ -7,7 +7,7 @@ const mssql = require('mssql');
 const dbConfig = require('./db-config');
 
 // Configurações
-const HTTP_PORT = 80;          // HTTP + API juntos
+const HTTP_PORT = 8080;          // HTTP + API juntos
 const WS_PORT = 8090;          // WebSocket Bridge
 const TCP_HOST = '10.0.20.43';
 const TCP_PORT = 2700;
