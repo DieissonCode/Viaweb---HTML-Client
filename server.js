@@ -7,8 +7,8 @@ const mssql = require('mssql');
 const dbConfig = require('./db-config');
 
 // Configurações
-const HTTP_PORT = 8080;          // HTTP + API juntos
-const WS_PORT = 8090;          // WebSocket Bridge
+const HTTP_PORT = 80;
+const WS_PORT = 8090;
 const TCP_HOST = '10.0.20.43';
 const TCP_PORT = 2700;
 
@@ -22,7 +22,6 @@ let globalIvRecv = null;
 let tcpIdentSent = false;
 let dbPool = null;
 
-// ==================== FUNÇÕES DE CRIPTOGRAFIA ====================
 function encrypt(plainText, keyBuffer, ivBuffer) {
     const plainBytes = Buffer.from(plainText, 'utf8');
     const blockSize = 16;
@@ -54,7 +53,6 @@ function hexToBuffer(hexString) {
     return Buffer.from(hexString, 'hex');
 }
 
-// ==================== BANCO DE DADOS ====================
 async function connectDatabase() {
     try {
         if (!dbPool) {
@@ -69,10 +67,8 @@ async function connectDatabase() {
     }
 }
 
-// ==================== SERVIDOR HTTP + API ====================
 const app = express();
 
-// CORS
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -84,7 +80,6 @@ app.use((req, res, next) => {
     }
 });
 
-// API de unidades
 app.get('/api/units', async (req, res) => {
     try {
         const pool = await connectDatabase();
@@ -93,7 +88,6 @@ app.get('/api/units', async (req, res) => {
             FROM [Programação].[dbo].[INSTALACAO]
             ORDER BY [NOME]
         `);
-        
         res.json({
             success: true,
             data: result.recordset
@@ -108,7 +102,15 @@ app.get('/api/units', async (req, res) => {
     }
 });
 
-// Arquivos estáticos (HTML, CSS, JS) - DEVE VIR DEPOIS das rotas da API
+
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 app.use(express.static(__dirname));
 
 const httpServer = app.listen(HTTP_PORT, '0.0.0.0', () => {
@@ -118,7 +120,6 @@ const httpServer = app.listen(HTTP_PORT, '0.0.0.0', () => {
     console.log(`   → API: http://192.9.100.100/api/units`);
 });
 
-// ==================== WEBSOCKET SERVER (Bridge) ====================
 const wss = new WebSocket.Server({ host: '0.0.0.0', port: WS_PORT });
 
 console.log(`🚀 WebSocket Bridge rodando em:`);

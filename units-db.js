@@ -42,12 +42,10 @@ export async function getUnits(forceRefresh = false) {
         }
     } catch (err) {
         console.error('❌ Erro ao buscar unidades:', err);
-        
         if (cachedUnits) {
             console.log('⚠️ Usando cache antigo devido a erro');
             return cachedUnits;
         }
-        
         console.log('⚠️ Usando dados de fallback');
         return getFallbackUnits();
     }
