@@ -85,7 +85,7 @@ app.get('/api/units', async (req, res) => {
         const pool = await connectDatabase();
         const result = await pool.request().query(`
             SELECT [NUMERO] as value, [NOME] as local, [NOME] as label
-            FROM [Programação].[dbo].[INSTALACAO]
+            FROM [viaweb].[Programação].[dbo].[INSTALACAO]
             ORDER BY [NOME]
         `);
         res.json({
@@ -102,6 +102,52 @@ app.get('/api/units', async (req, res) => {
     }
 });
 
+app.get('/api/users', async (req, res) => {
+    try {
+        const pool = await connectDatabase();
+        
+        const result = await pool.request().query(`
+            SELECT 
+                a.[ID_USUARIO],
+                a.[NOME] AS matricula,
+                SUBSTRING(b.[NUMERO],2,4) as idIsep,
+                c.[nome],
+                c.[cargo],
+                c.[telefone1],
+                c.[telefone2],
+                c.[ramal],
+                c.[c_custo],
+                c.[setor],
+                c.[local],
+                c.[situacao],
+                b.[nome] as unidade
+            FROM [viaweb].[Programação].[dbo].[USUARIOS] a
+            LEFT JOIN [viaweb].[Programação].[dbo].[INSTALACAO] b
+                ON a.ID_INSTALACAO = b.[ID_INSTALACAO]
+            LEFT JOIN [ASM].[dbo].[_colaboradores] c
+                ON a.NOME = c.[matricula]
+            WHERE ID_USUARIO > 6
+                AND LEN(a.nome) > 0
+                AND LEN(codigo) > 0
+                AND ISNUMERIC(a.NOME) = 1
+                AND LEN(c.nome) > 0
+                AND b.[numero] is not null
+            ORDER BY 3, 2
+        `);
+        
+        res.json({
+            success: true,
+            data: result.recordset
+        });
+        console.log(`✅ API — Retornados ${result.recordset.length} usuários`);
+    } catch (err) {
+        console.error('❌ API — Erro ao buscar usuários:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
 
 app.get('/api/health', (req, res) => {
     res.json({ 
