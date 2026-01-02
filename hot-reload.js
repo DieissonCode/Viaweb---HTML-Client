@@ -77,18 +77,21 @@ class HotReload {
             
             const state = JSON.parse(saved);
             
-            // Restaura variáveis globais
+            // Restaura variáveis globais - REPLACE instead of append to avoid duplication
             if (window.allEvents && state.allEvents) {
+                window.allEvents.length = 0; // Clear existing array
                 window.allEvents.push(...state.allEvents);
             }
             
             if (window.activeAlarms && state.activeAlarms) {
+                window.activeAlarms.clear(); // Clear existing Map
                 state.activeAlarms.forEach(([key, value]) => {
                     window.activeAlarms.set(key, value);
                 });
             }
             
             if (window.activePendentes && state.activePendentes) {
+                window.activePendentes.clear(); // Clear existing Map
                 state.activePendentes.forEach(([key, value]) => {
                     window.activePendentes.set(key, value);
                 });

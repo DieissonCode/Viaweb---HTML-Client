@@ -1,9 +1,9 @@
-﻿// main.js
+﻿// main.js - No ESM imports, uses global variables
 const WS_HOST = window.location.hostname || 'localhost';
 const WS_URL = `ws://${WS_HOST}:8090`;
-import { getUnits } from './units-db.js';
-import { ViawebCrypto } from './crypto.js';
-import { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } from './config.js';
+
+// Access global config
+const { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } = window.ViawebConfig;
 
 const status = document.getElementById('status');
 const clientNumber = document.getElementById('client-number');
@@ -36,30 +36,114 @@ let activePendentes = new Map();
 let selectedEvent = null;
 let debounceTimeout;
 let units = []; // DECLARAÇÃO DA VARIÁVEL UNITS
+let users = []; // DECLARAÇÃO DA VARIÁVEL USERS
 let selectedPendingEvent = null;
 let pendingCommands = new Map();
 let currentClientId = null;
 let ws = null;
 let reconnectTimer = null;
 const reconnectDelay = 3000;
+let reconnectAttempts = 0;
+const maxReconnectDelay = 30000; // Max 30 seconds
 let cryptoInstance = null;
 let savedPartitions = [];
 let savedZones = [];
+let commandIdCounter = 0; // Counter to avoid ID collisions
+const COMMAND_ID_MOD = 1000; // Modulo for counter wraparound
+const WS_BUFFER_LIMIT = 1024 * 1024; // 1MB WebSocket buffer limit
 
-// Carregar unidades ao iniciar
+// Tooltip state
+let tooltipTimer = null;
+let currentTooltip = null;
+
+// Performance: Search indices for O(1) filtering
+let eventsByLocal = new Map(); // Map of local -> events[]
+let eventsByCode = new Map();  // Map of code -> events[]
+
+// Update search indices when adding events
+function updateSearchIndices(event) {
+    // Index by local
+    if (!eventsByLocal.has(event.local)) {
+        eventsByLocal.set(event.local, []);
+    }
+    eventsByLocal.get(event.local).push(event);
+    
+    // Index by code
+    if (!eventsByCode.has(event.codigoEvento)) {
+        eventsByCode.set(event.codigoEvento, []);
+    }
+    eventsByCode.get(event.codigoEvento).push(event);
+    
+    // Limit index size
+    if (eventsByLocal.get(event.local).length > maxEvents) {
+        eventsByLocal.get(event.local).shift();
+    }
+    if (eventsByCode.get(event.codigoEvento).length > maxEvents) {
+        eventsByCode.get(event.codigoEvento).shift();
+    }
+}
+
+// Generate unique command ID with counter
+function generateCommandId() {
+    const timestamp = Date.now();
+    commandIdCounter = (commandIdCounter + 1) % COMMAND_ID_MOD;
+    return timestamp * 1000 + commandIdCounter;
+}
+
+// Validate ISEP format (4 hex digits)
+function isValidISEP(idISEP) {
+    if (!idISEP) return false;
+    const formatted = String(idISEP).trim().toUpperCase().padStart(4, '0');
+    return /^[0-9A-F]{4}$/.test(formatted);
+}
+
+// Carregar unidades ao iniciar (using global getUnits function)
 (async () => {
     try {
         console.log('🔄 Carregando unidades...');
-        units = await getUnits();
+        units = await window.getUnits();
         console.log(`✅ ${units.length} unidades carregadas`);
-        console.log('📋 UNITS COMPLETAS:', JSON.stringify(units, null, 2));
         populateUnitSelect();
     } catch (err) {
         console.error('❌ Erro ao carregar unidades:', err);
-        // Mostra mensagem de erro para o usuário
         unitSelect.innerHTML = '<option value="">Erro ao carregar unidades - Verifique a conexão</option>';
     }
 })();
+
+// Carregar usuários ao iniciar
+(async () => {
+    try {
+        console.log('🔄 Carregando usuários...');
+        users = await window.UsersDB.getUsers();
+        console.log(`✅ ${users.length} usuários carregados`);
+    } catch (err) {
+        console.error('❌ Erro ao carregar usuários:', err);
+    }
+})();
+
+// === THEME TOGGLE ===
+const themeToggle = document.getElementById('theme-toggle');
+const savedTheme = localStorage.getItem('theme');
+
+// Apply saved theme on load
+if (savedTheme === 'light') {
+    document.body.classList.add('light-mode');
+    themeToggle.textContent = '🌙';
+} else {
+    themeToggle.textContent = '☀️';
+}
+
+themeToggle.addEventListener('click', () => {
+    document.body.classList.toggle('light-mode');
+    
+    if (document.body.classList.contains('light-mode')) {
+        themeToggle.textContent = '🌙'; // Show moon in light mode
+        localStorage.setItem('theme', 'light');
+    } else {
+        themeToggle.textContent = '☀️'; // Show sun in dark mode
+        localStorage.setItem('theme', 'dark');
+    }
+});
 
 // Função para toggle das seções
 function setupToggle(headerId, contentId) {
@@ -91,7 +175,7 @@ function populateUnitSelect() {
 }
 
 async function initCrypto() {
-    cryptoInstance = new ViawebCrypto(CHAVE, IV);
+    cryptoInstance = new window.ViawebCrypto(CHAVE, IV);
 }
 
 function getLastDigit(id) {
@@ -177,21 +261,48 @@ function processEvent(data) {
     const hora = d.getHours().toString().padStart(2,'0');
     const min = d.getMinutes().toString().padStart(2,'0');
     const seg = d.getSeconds().toString().padStart(2,'0');
+
     let desc = eventosDB[cod] || `Evento ${cod}`;
     if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
 
     const isArmDisarm = armDisarmCodes.includes(cod);
     if (zonaUsuario > 0) {
-        desc += ` - ${isArmDisarm ? 'Usuário' : 'Zona'} ${zonaUsuario}`;
+        desc += ` - ${isArmDisarm ? '' : 'Zona ' + zonaUsuario}`;
     }
 
     let extraClass = '';
     if (cod === '1570') extraClass = 'inibida';
 
-    const ev = { id, local, data: `${dia}/${mes}/${ano}`, hora: `${hora}:${min}:${seg}`, complemento: zonaUsuario > 0 ? zonaUsuario : '-', particao: part, descricao: desc, codigoEvento: cod, clientId, timestamp: ts, extraClass };
+    const ev = {
+        id,
+        local,
+        data: `${dia}/${mes}/${ano}`,
+        hora: `${hora}:${min}:${seg}`,
+        complemento: zonaUsuario > 0 ? zonaUsuario : '-',
+        particao: part,
+        descricao: desc,
+        codigoEvento: cod,
+        clientId,
+        timestamp: ts,
+        extraClass
+    };
 
     allEvents.push(ev);
-    if (allEvents.length > maxEvents) allEvents.shift();
+    updateSearchIndices(ev); // Update search indices for faster filtering
+    if (allEvents.length > maxEvents) {
+        const removed = allEvents.shift();
+        // Clean up old event from indices
+        const localEvents = eventsByLocal.get(removed.local);
+        if (localEvents) {
+            const idx = localEvents.indexOf(removed);
+            if (idx > -1) localEvents.splice(idx, 1);
+        }
+        const codeEvents = eventsByCode.get(removed.codigoEvento);
+        if (codeEvents) {
+            const idx = codeEvents.indexOf(removed);
+            if (idx > -1) codeEvents.splice(idx, 1);
+        }
+    }
 
     if (cod === '1130') {
         const key = local;
@@ -233,9 +344,26 @@ function updateCounts() {
 
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
+    const lowerTerm = term.toLowerCase();
+    
+    // Performance: Use indices for exact matches when possible
+    if (term && !term.includes(' ')) {
+        // Check if searching by exact local or code
+        const upperTerm = term.toUpperCase();
+        if (eventsByLocal.has(upperTerm) || eventsByCode.has(upperTerm)) {
+            // Can use index for faster filtering
+            rows.forEach(row => {
+                const localCell = row.cells[0]?.textContent || '';
+                row.style.display = localCell.toUpperCase().includes(upperTerm) ? '' : 'none';
+            });
+            return;
+        }
+    }
+    
+    // Fallback to full text search
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(term.toLowerCase()) ? '' : 'none';
+        row.style.display = text.includes(lowerTerm) ? '' : 'none';
     });
 }
 
@@ -256,6 +384,7 @@ function updateEventList() {
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
     else if (currentTab === 'historico') sourceEvents = allEvents;
 
+    // Performance: Limit to last 300 events
     let filtered = sourceEvents.slice(-300);
 
     if (filterTerm) {
@@ -266,7 +395,9 @@ function updateEventList() {
         });
     }
 
-    const displayEvents = filtered.reverse();
+    // Performance: Virtual scrolling - only display last 100 events at a time
+    const maxDisplayEvents = 100;
+    const displayEvents = filtered.slice(-maxDisplayEvents).reverse();
 
     displayEvents.forEach(item => {
         let ev, count = 1;
@@ -278,31 +409,91 @@ function updateEventList() {
         const tr = eventList.insertRow();
         tr.className = `event-row ${ev.extraClass || ''}`;
         const cod = ev.codigoEvento;
+        const isArmDisarmCode = armDisarmCodes.includes(cod);
+
         if (cod === '1130') tr.classList.add('alarm');
-        else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline'); // Cliente offline
-        else if (cod === '3AA6') tr.classList.add('online'); // Cliente online
+        else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline');
+        else if (cod === '3AA6') tr.classList.add('online');
         else if (cod.startsWith('3')) tr.classList.add('restauro');
         else if (falhaCodes.includes(cod)) tr.classList.add('falha');
-        else if (armDisarmCodes.includes(cod)) tr.classList.add('armedisarm');
+        else if (isArmDisarmCode) tr.classList.add('armedisarm');
         else if (cod.startsWith('16')) tr.classList.add('teste');
 
         const partName = getPartitionName(ev.particao, ev.clientId);
+
         let desc = ev.descricao;
+
         if (count > 1) desc += ` (${count} eventos)`;
 
-        tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${ev.complemento}</td><td>${partName}</td><td>${desc}</td>`;
+        // Tipos especiais (apenas para arm/desarm)
+        const tipos = {
+            1: '[Monitoramento]',
+            2: '[Facilitador]',
+            3: '[Uso Único]',
+            4: '[Uso Único]',
+            5: '[Uso Único]',
+            6: '[TI - Manutenção]'
+        };
 
-        // Click no evento seleciona o cliente automaticamente
+        let complemento = ev.complemento;
+        let userData = null;
+
+        if (isArmDisarmCode && ev.complemento && ev.complemento !== '-') {
+            const zonaUsuario = Number(ev.complemento);
+            const isep = String(ev.local || ev.clientId);
+            const userId = String(ev.complemento);
+
+            // 1..6 recebem apenas o rótulo; demais continuam “Usuário <id>”
+            if (tipos[zonaUsuario]) {
+                desc += ` ${tipos[zonaUsuario]}`;
+                console.log('Resolved user data TIPOS: ' + tipos[zonaUsuario]);
+            } else {
+                desc += `Usuário ${ev.complemento}`;
+                console.log('Resolved user data: ' + desc);
+            }
+            // Resolve usuário via ID_USUARIO no mesmo ISEP
+            const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
+            userData = usersByIsep.find(u => String(u.ID_USUARIO) === userId) || null;
+            if (userData && !tipos[zonaUsuario]) {
+                desc = ev.descricao + window.UsersDB.formatUserName(userData);
+                //complemento = window.UsersDB.formatUserName(userData);
+            }
+        }
+
+        tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
+
+        if (userData) {
+       // if (desc) {
+            let hoverTimer = null;
+            tr.addEventListener('mouseenter', () => {
+                hoverTimer = setTimeout(() => {
+                    showTooltip(tr, userData);
+                }, 2000);
+            });
+            tr.addEventListener('mouseleave', () => {
+                if (hoverTimer) clearTimeout(hoverTimer);
+                hideTooltip();
+            });
+        }
+
         tr.style.cursor = 'pointer';
         tr.onclick = () => {
             if (item.group) {
                 openCloseModal(item.group, item.type);
             } else {
-                // Seleciona cliente do evento
                 selectClientFromEvent(ev);
             }
         };
     });
+    
+    // Show info if more events are available
+    if (filtered.length > maxDisplayEvents) {
+        const infoRow = eventList.insertRow(0);
+        infoRow.className = 'event-info';
+        infoRow.innerHTML = `<td colspan="6" style="text-align: center; padding: 8px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px;">
+            Mostrando últimos ${maxDisplayEvents} de ${filtered.length} eventos. Use o filtro para refinar a busca.
+        </td>`;
+    }
 }
 
 function openCloseModal(group, type) {
@@ -311,11 +502,40 @@ function openCloseModal(group, type) {
     procedureText.focus();
 }
 
+function showTooltip(element, userData) {
+    hideTooltip(); // Remove any existing tooltip
+    
+    const tooltip = document.createElement('div');
+    tooltip.className = 'user-tooltip';
+    tooltip.textContent = window.UsersDB.formatUserInfo(userData);
+    
+    const rect = element.getBoundingClientRect();
+    tooltip.style.position = 'fixed';
+    tooltip.style.left = rect.left + 'px';
+    tooltip.style.top = (rect.bottom + 5) + 'px';
+    tooltip.style.zIndex = '10000';
+    document.body.appendChild(tooltip);
+    currentTooltip = tooltip;
+}
+
+function hideTooltip() {
+    if (currentTooltip) {
+        currentTooltip.remove();
+        currentTooltip = null;
+    }
+}
+
 function selectClientFromEvent(ev) {
     const isep = ev.local || ev.clientId;
     if (!isep) return;
     
     console.log('🎯 Selecionando cliente do evento:', isep);
+    
+    // Clear unit filter first
+    unitSearch.value = '';
+    
+    // Repopulate full list
+    populateUnitSelect();
     
     // Procura unidade com esse ISEP
     const unit = units.find(u => String(u.value) === String(isep));
@@ -352,6 +572,13 @@ function sendCommand(data) {
         console.error('❌ WebSocket não conectado');
         return false;
     }
+    
+    // Check WebSocket buffer before sending
+    if (ws.bufferedAmount > WS_BUFFER_LIMIT) {
+        console.error('❌ Buffer WebSocket cheio, aguardando...');
+        return false;
+    }
+    
     try {
         ws.send(JSON.stringify(data));
         console.log('📤 Comando enviado para bridge:', JSON.stringify(data));
@@ -371,7 +598,20 @@ function getSelectedZones() {
 }
 
 function armarParticoes(idISEP, particoes, zonas) {
-    const cmdId = Date.now();
+    // Validate ISEP before sending
+    if (!isValidISEP(idISEP)) {
+        console.error('❌ ISEP inválido:', idISEP);
+        alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.');
+        return;
+    }
+    
+    // Validate input
+    if (!particoes || particoes.length === 0) {
+        alert('Selecione ao menos uma partição');
+        return;
+    }
+    
+    const cmdId = generateCommandId();
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
@@ -379,7 +619,20 @@ function armarParticoes(idISEP, particoes, zonas) {
 }
 
 function desarmarParticoes(idISEP, particoes) {
-    const cmdId = Date.now();
+    // Validate ISEP before sending
+    if (!isValidISEP(idISEP)) {
+        console.error('❌ ISEP inválido:', idISEP);
+        alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.');
+        return;
+    }
+    
+    // Validate input
+    if (!particoes || particoes.length === 0) {
+        alert('Selecione ao menos uma partição');
+        return;
+    }
+    
+    const cmdId = generateCommandId();
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
@@ -390,12 +643,18 @@ function desarmarParticoes(idISEP, particoes) {
 function fetchPartitionsAndZones(idISEP) {
     console.log('🚀 fetchPartitionsAndZones chamada com idISEP:', idISEP, '| Tipo:', typeof idISEP);
     
+    // Validate ISEP
+    if (!isValidISEP(idISEP)) {
+        console.error('❌ ISEP inválido:', idISEP);
+        return;
+    }
+    
     // Garante que idISEP seja string de 4 dígitos (sem conversão!)
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     console.log('📝 idISEP formatado (sem conversão):', isepFormatted);
     
-    const id1 = Date.now();
-    const id2 = id1 + 1;
+    const id1 = generateCommandId();
+    const id2 = generateCommandId();
     pendingCommands.set(id1, resp => resp.resposta && updatePartitions(resp.resposta));
     pendingCommands.set(id2, resp => resp.resposta && updateZones(resp.resposta));
     
@@ -424,6 +683,7 @@ function connectWebSocket() {
     ws.onopen = async () => {
         console.log('[WS] Conectado');
         clearTimeout(reconnectTimer);
+        reconnectAttempts = 0; // Reset attempts on successful connection
         updateStatus(true);
         armButton.disabled = disarmButton.disabled = true;
         // Não precisa mais inicializar crypto - bridge faz isso
@@ -468,8 +728,13 @@ function connectWebSocket() {
         partitionsList.innerHTML = zonesColumns.innerHTML = '';
         totalZones.textContent = '0';
         cryptoInstance = null;
-        reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
-        console.log(`[WS] Reconectando em ${reconnectDelay/1000}s...`);
+        
+        // Exponential backoff for reconnection
+        reconnectAttempts++;
+        const delay = Math.min(reconnectDelay * Math.pow(2, reconnectAttempts - 1), maxReconnectDelay);
+        
+        reconnectTimer = setTimeout(connectWebSocket, delay);
+        console.log(`[WS] Reconectando em ${delay/1000}s... (tentativa ${reconnectAttempts})`);
     };
 
     ws.onerror = (e) => console.error('[WS] Erro WS:', e);
@@ -673,6 +938,18 @@ disarmAllButton.addEventListener('click', () => {
 
 connectWebSocket();
 
+// === SERVICE WORKER REGISTRATION ===
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+            .then((registration) => {
+                console.log('[SW] Service Worker registered:', registration.scope);
+            })
+            .catch((error) => {
+                console.log('[SW] Service Worker registration failed:', error);
+            });
+    });
+}
 
 // === EXPORTAÇÕES PARA HOT RELOAD ===
 // Usa getters para manter referências atualizadas
