@@ -48,6 +48,8 @@ let cryptoInstance = null;
 let savedPartitions = [];
 let savedZones = [];
 let commandIdCounter = 0; // Counter to avoid ID collisions
+const COMMAND_ID_MOD = 1000; // Modulo for counter wraparound
+const WS_BUFFER_LIMIT = 1024 * 1024; // 1MB WebSocket buffer limit
 
 // Performance: Search indices for O(1) filtering
 let eventsByLocal = new Map(); // Map of local -> events[]
@@ -79,7 +81,7 @@ function updateSearchIndices(event) {
 // Generate unique command ID with counter
 function generateCommandId() {
     const timestamp = Date.now();
-    commandIdCounter = (commandIdCounter + 1) % 1000;
+    commandIdCounter = (commandIdCounter + 1) % COMMAND_ID_MOD;
     return timestamp * 1000 + commandIdCounter;
 }
 
@@ -465,7 +467,7 @@ function sendCommand(data) {
     }
     
     // Check WebSocket buffer before sending
-    if (ws.bufferedAmount > 1024 * 1024) { // 1MB buffer limit
+    if (ws.bufferedAmount > WS_BUFFER_LIMIT) {
         console.error('❌ Buffer WebSocket cheio, aguardando...');
         return false;
     }

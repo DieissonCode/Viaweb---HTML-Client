@@ -112,6 +112,19 @@ const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 100;
 
+// Cleanup old rate limit records every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, record] of rateLimitMap.entries()) {
+        if (now > record.resetTime + RATE_LIMIT_WINDOW) {
+            rateLimitMap.delete(ip);
+        }
+    }
+    if (rateLimitMap.size > 0) {
+        logger.debug(`Rate limit map cleaned, ${rateLimitMap.size} entries remaining`);
+    }
+}, 5 * 60 * 1000);
+
 function rateLimiter(req, res, next) {
     const ip = req.ip || req.connection.remoteAddress;
     const now = Date.now();
