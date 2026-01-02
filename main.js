@@ -36,6 +36,7 @@ let activePendentes = new Map();
 let selectedEvent = null;
 let debounceTimeout;
 let units = []; // DECLARAÇÃO DA VARIÁVEL UNITS
+let users = []; // DECLARAÇÃO DA VARIÁVEL USERS
 let selectedPendingEvent = null;
 let pendingCommands = new Map();
 let currentClientId = null;
@@ -50,6 +51,10 @@ let savedZones = [];
 let commandIdCounter = 0; // Counter to avoid ID collisions
 const COMMAND_ID_MOD = 1000; // Modulo for counter wraparound
 const WS_BUFFER_LIMIT = 1024 * 1024; // 1MB WebSocket buffer limit
+
+// Tooltip state
+let tooltipTimer = null;
+let currentTooltip = null;
 
 // Performance: Search indices for O(1) filtering
 let eventsByLocal = new Map(); // Map of local -> events[]
@@ -98,12 +103,21 @@ function isValidISEP(idISEP) {
         console.log('🔄 Carregando unidades...');
         units = await window.getUnits();
         console.log(`✅ ${units.length} unidades carregadas`);
-        console.log('📋 UNITS COMPLETAS:', JSON.stringify(units, null, 2));
         populateUnitSelect();
     } catch (err) {
         console.error('❌ Erro ao carregar unidades:', err);
-        // Mostra mensagem de erro para o usuário
         unitSelect.innerHTML = '<option value="">Erro ao carregar unidades - Verifique a conexão</option>';
+    }
+})();
+
+// Carregar usuários ao iniciar
+(async () => {
+    try {
+        console.log('🔄 Carregando usuários...');
+        users = await window.UsersDB.getUsers();
+        console.log(`✅ ${users.length} usuários carregados`);
+    } catch (err) {
+        console.error('❌ Erro ao carregar usuários:', err);
     }
 })();
 
@@ -383,8 +397,8 @@ function updateEventList() {
         tr.className = `event-row ${ev.extraClass || ''}`;
         const cod = ev.codigoEvento;
         if (cod === '1130') tr.classList.add('alarm');
-        else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline'); // Cliente offline
-        else if (cod === '3AA6') tr.classList.add('online'); // Cliente online
+        else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline');
+        else if (cod === '3AA6') tr.classList.add('online');
         else if (cod.startsWith('3')) tr.classList.add('restauro');
         else if (falhaCodes.includes(cod)) tr.classList.add('falha');
         else if (armDisarmCodes.includes(cod)) tr.classList.add('armedisarm');
@@ -393,8 +407,37 @@ function updateEventList() {
         const partName = getPartitionName(ev.particao, ev.clientId);
         let desc = ev.descricao;
         if (count > 1) desc += ` (${count} eventos)`;
+        
+        // For arm/disarm events, try to get user info
+        let complemento = ev.complemento;
+        let userData = null;
+        if (armDisarmCodes.includes(cod) && ev.complemento && ev.complemento !== '-') {
+            const userId = String(ev.complemento);
+            const isep = String(ev.local || ev.clientId);
+            userData = window.UsersDB.getUserByMatriculaAndIsep(userId, isep);
+            
+            if (userData) {
+                complemento = window.UsersDB.formatUserName(userData);
+            }
+        }
 
-        tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${ev.complemento}</td><td>${partName}</td><td>${desc}</td>`;
+        tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
+
+        // Tooltip for events with user data
+        if (userData) {
+            let hoverTimer = null;
+            
+            tr.addEventListener('mouseenter', () => {
+                hoverTimer = setTimeout(() => {
+                    showTooltip(tr, userData);
+                }, 2000); // 2 seconds
+            });
+            
+            tr.addEventListener('mouseleave', () => {
+                if (hoverTimer) clearTimeout(hoverTimer);
+                hideTooltip();
+            });
+        }
 
         // Click no evento seleciona o cliente automaticamente
         tr.style.cursor = 'pointer';
@@ -402,7 +445,6 @@ function updateEventList() {
             if (item.group) {
                 openCloseModal(item.group, item.type);
             } else {
-                // Seleciona cliente do evento
                 selectClientFromEvent(ev);
             }
         };
@@ -424,11 +466,42 @@ function openCloseModal(group, type) {
     procedureText.focus();
 }
 
+// Tooltip functions
+function showTooltip(element, userData) {
+    hideTooltip(); // Remove any existing tooltip
+    
+    const tooltip = document.createElement('div');
+    tooltip.className = 'user-tooltip';
+    tooltip.textContent = window.UsersDB.formatUserInfo(userData);
+    
+    const rect = element.getBoundingClientRect();
+    tooltip.style.position = 'fixed';
+    tooltip.style.left = rect.left + 'px';
+    tooltip.style.top = (rect.bottom + 5) + 'px';
+    tooltip.style.zIndex = '10000';
+    
+    document.body.appendChild(tooltip);
+    currentTooltip = tooltip;
+}
+
+function hideTooltip() {
+    if (currentTooltip) {
+        currentTooltip.remove();
+        currentTooltip = null;
+    }
+}
+
 function selectClientFromEvent(ev) {
     const isep = ev.local || ev.clientId;
     if (!isep) return;
     
     console.log('🎯 Selecionando cliente do evento:', isep);
+    
+    // Clear unit filter first
+    unitSearch.value = '';
+    
+    // Repopulate full list
+    populateUnitSelect();
     
     // Procura unidade com esse ISEP
     const unit = units.find(u => String(u.value) === String(isep));
