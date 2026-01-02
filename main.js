@@ -78,6 +78,30 @@ function isValidISEP(idISEP) {
     }
 })();
 
+// === THEME TOGGLE ===
+const themeToggle = document.getElementById('theme-toggle');
+const savedTheme = localStorage.getItem('theme');
+
+// Apply saved theme on load
+if (savedTheme === 'light') {
+    document.body.classList.add('light-mode');
+    themeToggle.textContent = '🌙';
+} else {
+    themeToggle.textContent = '☀️';
+}
+
+themeToggle.addEventListener('click', () => {
+    document.body.classList.toggle('light-mode');
+    
+    if (document.body.classList.contains('light-mode')) {
+        themeToggle.textContent = '🌙'; // Show moon in light mode
+        localStorage.setItem('theme', 'light');
+    } else {
+        themeToggle.textContent = '☀️'; // Show sun in dark mode
+        localStorage.setItem('theme', 'dark');
+    }
+});
+
 // Função para toggle das seções
 function setupToggle(headerId, contentId) {
     const header = document.getElementById(headerId);
@@ -734,6 +758,20 @@ disarmAllButton.addEventListener('click', () => {
 });
 
 connectWebSocket();
+
+
+// === SERVICE WORKER REGISTRATION ===
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+            .then((registration) => {
+                console.log('[SW] Service Worker registered:', registration.scope);
+            })
+            .catch((error) => {
+                console.log('[SW] Service Worker registration failed:', error);
+            });
+    });
+}
 
 
 // === EXPORTAÇÕES PARA HOT RELOAD ===

@@ -18,52 +18,26 @@
     <link rel="manifest" href="site.webmanifest">
     <link rel="stylesheet" href="styles.css">
     <style>
-        body {
-            display: grid;
-            grid-template-rows: auto 1fr;
-            padding: 20px;
-            margin: 0;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            transition: grid-template-columns 0.4s ease;
-        }
-        #top-header {
-            grid-column: 1 / -1;
-            text-align: center;
-            font-size: 2rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            padding: 20px 20px 0px;
-            background: var(--bg-card);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px var(--shadow);
-        }
-        body.both-open #top-header { font-size: 1.5rem; }
-
-        #status-icon { width: 12px; height: 12px; border-radius: 50%; animation: pulse 2s infinite; }
-        .connected #status-icon { background: var(--success); box-shadow: 0 0 10px var(--success); }
-        .disconnected #status-icon { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
         .panels-container {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            gap: 10px;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
         }
         .panels-container.left-closed { grid-template-columns: 80px 1fr; }
         .panels-container.right-closed { grid-template-columns: 1fr 80px; }
 
         .panel {
             background: var(--bg-card);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px var(--shadow);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px var(--shadow);
             display: flex;
             flex-direction: column;
             overflow: hidden;
             min-width: 0;
+            min-height: 0;
             transition: all 0.4s ease;
         }
 
@@ -71,30 +45,31 @@
 
         .section-header {
             background: var(--bg-dark);
-            padding: 12px 16px;
+            padding: 10px 14px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: space-between;
             user-select: none;
             min-width: 60px;
-            border-radius: 12px;
+            border-radius: 8px;
+            flex-shrink: 0;
         }
 
         .header-title {
             font-weight: 600;
-            font-size: 18px;
+            font-size: 16px;
         }
 
         .header-title-vertical {
             writing-mode: vertical-rl;
             text-orientation: mixed;
-            font-size: 18px;
+            font-size: 16px;
             margin: auto;
         }
 
         .toggle-arrow {
-            font-size: 24px;
+            font-size: 20px;
             transition: transform 0.3s ease;
         }
 
@@ -109,31 +84,41 @@
             overflow: auto;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
-        #control-panel { padding: 24px; height: 100%; display: flex; flex-direction: column; }
-        #events-container { padding: 24px; height: 100%; display: flex; flex-direction: column; }
+        #control-panel { 
+            padding: 16px; 
+            height: 100%; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 12px;
+            overflow: auto;
+        }
+        #events-container { 
+            padding: 16px; 
+            height: 100%; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px;
+            overflow: hidden;
+        }
 
-        /* Tabela eventos compacta quando ambos abertos */
-        body.both-open #events-table td,
-        body.both-open #events-table th {
-            padding: 8px 6px;
-            font-size: 13px;
-        }
-        body.one-panel-open #events-table td,
-        body.one-panel-open #events-table th {
-            padding: 12px;
-            font-size: 14px;
+        /* Tabela eventos compacta */
+        #events-table td,
+        #events-table th {
+            padding: 6px 8px;
+            font-size: 12px;
         }
 
-        /* Partições e zonas compactas quando ambos abertos */
-        body.both-open .partition-item,
-        body.both-open .zone-item {
+        /* Partições e zonas compactas */
+        .partition-item,
+        .zone-item {
             padding: 6px 8px;
             font-size: 13px;
         }
 
-        body.both-open .partition-item label,
-        body.both-open .zone-item label {
+        .partition-item label,
+        .zone-item label {
             display: flex;
             align-items: center;
             gap: 6px;
@@ -143,26 +128,14 @@
             text-overflow: ellipsis;
         }
 
-        body.both-open .mono-number {
-            font-size: 14px;
+        .mono-number {
+            font-size: 13px;
         }
 
-        body.both-open .partition-status,
-        body.both-open .zone-status {
-            font-size: 11px;
+        .partition-status,
+        .zone-status {
+            font-size: 10px;
             padding: 2px 6px;
-        }
-
-        body.one-panel-open .partition-item,
-        body.one-panel-open .zone-item {
-            padding: 10px;
-            font-size: 14px;
-        }
-
-        body.one-panel-open .partition-status,
-        body.one-panel-open .zone-status {
-            font-size: 12px;
-            padding: 4px 10px;
         }
 
         /* Botões ao lado dos títulos */
@@ -170,27 +143,75 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
         .section-with-button h3 {
             margin: 0;
+            font-size: 14px;
         }
         .section-with-button button {
-            font-size: 12px;
-            padding: 6px 10px;
+            font-size: 11px;
+            padding: 4px 8px;
         }
 
         /* UI Compacta */
-        .compact-actions { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-        .compact-actions button { flex: 1; min-width: 120px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .quick-select { display: none; } /* escondido pois botões movidos */
-        .zones-compact { max-height: 472px; overflow-y: auto; background: var(--bg-dark); padding: 10px; border-radius: 8px; }
+        .compact-actions { 
+            display: flex; 
+            gap: 6px; 
+            margin-bottom: 8px; 
+            flex-wrap: wrap; 
+        }
+        .compact-actions button { 
+            flex: 1; 
+            min-width: 100px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 6px;
+            font-size: 12px;
+            padding: 8px 12px;
+        }
+        .zones-compact { 
+            max-height: 350px; 
+            overflow-y: auto; 
+            background: var(--bg-dark); 
+            padding: 8px; 
+            border-radius: 6px; 
+        }
+        
+        #client-info {
+            padding: 10px;
+            font-size: 13px;
+        }
+        
+        #unit-select-container {
+            gap: 8px;
+        }
+        
+        #unit-select-container label {
+            font-size: 13px;
+        }
+        
+        #unit-select {
+            max-height: 80px;
+        }
+        
+        hr {
+            margin: 8px 0;
+        }
+        
+        .container {
+            gap: 12px;
+        }
     </style>
 </head>
 <body>
     <h1 id="status" class="disconnected">
         <span id="status-text">Viaweb - Cotrijal</span>
         <span id="status-icon"></span>
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Alternar tema">
+            🌙
+        </button>
     </h1>
 
     <div class="panels-container" id="panels-container">
@@ -304,7 +325,6 @@
 
         function updateLayout() {
             panelsContainer.classList.remove('left-closed', 'right-closed');
-            body.classList.remove('both-open', 'one-panel-open');
 
             const leftClosed = leftPanel.classList.contains('closed');
             const rightClosed = rightPanel.classList.contains('closed');
@@ -315,12 +335,6 @@
 
             if (leftClosed) panelsContainer.classList.add('left-closed');
             if (rightClosed) panelsContainer.classList.add('right-closed');
-
-            if (!leftClosed && !rightClosed) {
-                body.classList.add('both-open');
-            } else {
-                body.classList.add('one-panel-open');
-            }
 
             document.querySelectorAll('.header-title').forEach(t => t.style.display = 'none');
             document.querySelectorAll('.header-title:not(.header-title-vertical)').forEach(t => {
