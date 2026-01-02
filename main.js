@@ -1,9 +1,9 @@
-﻿// main.js
+﻿// main.js - No ESM imports, uses global variables
 const WS_HOST = window.location.hostname || 'localhost';
 const WS_URL = `ws://${WS_HOST}:8090`;
-import { getUnits } from './units-db.js';
-import { ViawebCrypto } from './crypto.js';
-import { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } from './config.js';
+
+// Access global config
+const { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } = window.ViawebConfig;
 
 const status = document.getElementById('status');
 const clientNumber = document.getElementById('client-number');
@@ -42,15 +42,32 @@ let currentClientId = null;
 let ws = null;
 let reconnectTimer = null;
 const reconnectDelay = 3000;
+let reconnectAttempts = 0;
+const maxReconnectDelay = 30000; // Max 30 seconds
 let cryptoInstance = null;
 let savedPartitions = [];
 let savedZones = [];
+let commandIdCounter = 0; // Counter to avoid ID collisions
 
-// Carregar unidades ao iniciar
+// Generate unique command ID with counter
+function generateCommandId() {
+    const timestamp = Date.now();
+    commandIdCounter = (commandIdCounter + 1) % 1000;
+    return timestamp * 1000 + commandIdCounter;
+}
+
+// Validate ISEP format (4 hex digits)
+function isValidISEP(idISEP) {
+    if (!idISEP) return false;
+    const formatted = String(idISEP).trim().toUpperCase().padStart(4, '0');
+    return /^[0-9A-F]{4}$/.test(formatted);
+}
+
+// Carregar unidades ao iniciar (using global getUnits function)
 (async () => {
     try {
         console.log('🔄 Carregando unidades...');
-        units = await getUnits();
+        units = await window.getUnits();
         console.log(`✅ ${units.length} unidades carregadas`);
         console.log('📋 UNITS COMPLETAS:', JSON.stringify(units, null, 2));
         populateUnitSelect();
@@ -91,7 +108,7 @@ function populateUnitSelect() {
 }
 
 async function initCrypto() {
-    cryptoInstance = new ViawebCrypto(CHAVE, IV);
+    cryptoInstance = new window.ViawebCrypto(CHAVE, IV);
 }
 
 function getLastDigit(id) {
@@ -352,6 +369,13 @@ function sendCommand(data) {
         console.error('❌ WebSocket não conectado');
         return false;
     }
+    
+    // Check WebSocket buffer before sending
+    if (ws.bufferedAmount > 1024 * 1024) { // 1MB buffer limit
+        console.error('❌ Buffer WebSocket cheio, aguardando...');
+        return false;
+    }
+    
     try {
         ws.send(JSON.stringify(data));
         console.log('📤 Comando enviado para bridge:', JSON.stringify(data));
@@ -371,7 +395,20 @@ function getSelectedZones() {
 }
 
 function armarParticoes(idISEP, particoes, zonas) {
-    const cmdId = Date.now();
+    // Validate ISEP before sending
+    if (!isValidISEP(idISEP)) {
+        console.error('❌ ISEP inválido:', idISEP);
+        alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.');
+        return;
+    }
+    
+    // Validate input
+    if (!particoes || particoes.length === 0) {
+        alert('Selecione ao menos uma partição');
+        return;
+    }
+    
+    const cmdId = generateCommandId();
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
@@ -379,7 +416,20 @@ function armarParticoes(idISEP, particoes, zonas) {
 }
 
 function desarmarParticoes(idISEP, particoes) {
-    const cmdId = Date.now();
+    // Validate ISEP before sending
+    if (!isValidISEP(idISEP)) {
+        console.error('❌ ISEP inválido:', idISEP);
+        alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.');
+        return;
+    }
+    
+    // Validate input
+    if (!particoes || particoes.length === 0) {
+        alert('Selecione ao menos uma partição');
+        return;
+    }
+    
+    const cmdId = generateCommandId();
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
@@ -390,12 +440,18 @@ function desarmarParticoes(idISEP, particoes) {
 function fetchPartitionsAndZones(idISEP) {
     console.log('🚀 fetchPartitionsAndZones chamada com idISEP:', idISEP, '| Tipo:', typeof idISEP);
     
+    // Validate ISEP
+    if (!isValidISEP(idISEP)) {
+        console.error('❌ ISEP inválido:', idISEP);
+        return;
+    }
+    
     // Garante que idISEP seja string de 4 dígitos (sem conversão!)
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
     console.log('📝 idISEP formatado (sem conversão):', isepFormatted);
     
-    const id1 = Date.now();
-    const id2 = id1 + 1;
+    const id1 = generateCommandId();
+    const id2 = generateCommandId();
     pendingCommands.set(id1, resp => resp.resposta && updatePartitions(resp.resposta));
     pendingCommands.set(id2, resp => resp.resposta && updateZones(resp.resposta));
     
@@ -424,6 +480,7 @@ function connectWebSocket() {
     ws.onopen = async () => {
         console.log('[WS] Conectado');
         clearTimeout(reconnectTimer);
+        reconnectAttempts = 0; // Reset attempts on successful connection
         updateStatus(true);
         armButton.disabled = disarmButton.disabled = true;
         // Não precisa mais inicializar crypto - bridge faz isso
@@ -468,8 +525,13 @@ function connectWebSocket() {
         partitionsList.innerHTML = zonesColumns.innerHTML = '';
         totalZones.textContent = '0';
         cryptoInstance = null;
-        reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
-        console.log(`[WS] Reconectando em ${reconnectDelay/1000}s...`);
+        
+        // Exponential backoff for reconnection
+        reconnectAttempts++;
+        const delay = Math.min(reconnectDelay * Math.pow(2, reconnectAttempts - 1), maxReconnectDelay);
+        
+        reconnectTimer = setTimeout(connectWebSocket, delay);
+        console.log(`[WS] Reconectando em ${delay/1000}s... (tentativa ${reconnectAttempts})`);
     };
 
     ws.onerror = (e) => console.error('[WS] Erro WS:', e);

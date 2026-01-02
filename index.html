@@ -290,7 +290,11 @@
         </div>
     </div>
 
-    <script type="module" src="main.js"></script>
+    <!-- Load dependencies in order (no ESM modules) -->
+    <script src="config.js"></script>
+    <script src="crypto.js"></script>
+    <script src="units-db.js"></script>
+    <script src="main.js"></script>
     <script>
         const body = document.body;
         const panelsContainer = document.getElementById('panels-container');
