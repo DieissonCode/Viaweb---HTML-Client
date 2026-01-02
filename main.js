@@ -2,8 +2,8 @@
 const WS_HOST = window.location.hostname || 'localhost';
 const WS_URL = `ws://${WS_HOST}:8090`;
 
-// Access global config
 const { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } = window.ViawebConfig;
+const VC = window.ViawebCommands || {};
 
 const status = document.getElementById('status');
 const clientNumber = document.getElementById('client-number');
@@ -28,6 +28,67 @@ const toggleZonesBtn = document.getElementById('toggle-zones');
 const armAllButton = document.getElementById('arm-all-button');
 const disarmAllButton = document.getElementById('disarm-all-button');
 
+// Status visual da central (online/offline)
+let clientStatusEl = document.getElementById('client-status');
+if (!clientStatusEl && clientNumber?.parentElement) {
+    clientStatusEl = document.createElement('span');
+    clientStatusEl.id = 'client-status';
+    clientStatusEl.className = 'client-status';
+    clientNumber.parentElement.appendChild(clientStatusEl);
+}
+
+let unitStatus = null;
+let unitStatusSince = null;
+
+// Cache global de status por ISEP
+// Map ISEP -> { status: 'online'|'offline', since: timestamp(ms) }
+const statusCache = new Map();
+
+function setUnitStatus(newStatus, sinceTs = null, isep = null) {
+    const isChange = unitStatus !== newStatus || (sinceTs && unitStatusSince !== sinceTs);
+    if (isChange) unitStatusSince = sinceTs || Date.now();
+    unitStatus = newStatus;
+    updateClientStatus();
+    if (isep && isValidISEP(isep)) {
+        const prev = statusCache.get(isep);
+        if (!prev || prev.status !== newStatus || (sinceTs && prev.since !== sinceTs)) {
+            statusCache.set(isep, { status: newStatus, since: unitStatusSince });
+        }
+    }
+}
+
+function updateClientStatus() {
+    if (!clientStatusEl) return;
+    const sinceStr = unitStatusSince ? ` — desde ${new Date(unitStatusSince).toLocaleString()}` : '';
+    if (unitStatus === 'online') {
+        clientStatusEl.textContent = `Online${sinceStr}`;
+        clientStatusEl.classList.add('online');
+        clientStatusEl.classList.remove('offline');
+    } else if (unitStatus === 'offline') {
+        clientStatusEl.textContent = `Offline${sinceStr}`;
+        clientStatusEl.classList.add('offline');
+        clientStatusEl.classList.remove('online');
+    } else {
+        clientStatusEl.textContent = '';
+        clientStatusEl.classList.remove('online', 'offline');
+    }
+}
+
+// Limpar partições/zonas
+function clearPartitionsAndZones() {
+    partitionsList.innerHTML = '';
+    zonesColumns.innerHTML = '';
+    totalZones.textContent = '0';
+}
+
+// Se houver status no cache para o ISEP selecionado, aplica
+function applyCachedStatus(isep) {
+    const cached = statusCache.get(isep);
+    if (!cached) return;
+    setUnitStatus(cached.status, cached.since, isep);
+}
+
+// Demais variáveis globais
 let updateInterval;
 const maxEvents = 300;
 let allEvents = [];
@@ -35,8 +96,8 @@ let activeAlarms = new Map();
 let activePendentes = new Map();
 let selectedEvent = null;
 let debounceTimeout;
-let units = []; // DECLARAÇÃO DA VARIÁVEL UNITS
-let users = []; // DECLARAÇÃO DA VARIÁVEL USERS
+let units = [];
+let users = [];
 let selectedPendingEvent = null;
 let pendingCommands = new Map();
 let currentClientId = null;
@@ -44,108 +105,68 @@ let ws = null;
 let reconnectTimer = null;
 const reconnectDelay = 3000;
 let reconnectAttempts = 0;
-const maxReconnectDelay = 30000; // Max 30 seconds
+const maxReconnectDelay = 30000;
 let cryptoInstance = null;
 let savedPartitions = [];
 let savedZones = [];
-let commandIdCounter = 0; // Counter to avoid ID collisions
-const COMMAND_ID_MOD = 1000; // Modulo for counter wraparound
-const WS_BUFFER_LIMIT = 1024 * 1024; // 1MB WebSocket buffer limit
+let commandIdCounter = 0;
+const COMMAND_ID_MOD = 1000;
+const WS_BUFFER_LIMIT = 1024 * 1024;
 
 // Tooltip state
 let tooltipTimer = null;
 let currentTooltip = null;
 
-// Performance: Search indices for O(1) filtering
-let eventsByLocal = new Map(); // Map of local -> events[]
-let eventsByCode = new Map();  // Map of code -> events[]
+// Performance indices
+let eventsByLocal = new Map();
+let eventsByCode = new Map();
 
-// Update search indices when adding events
 function updateSearchIndices(event) {
-    // Index by local
-    if (!eventsByLocal.has(event.local)) {
-        eventsByLocal.set(event.local, []);
-    }
+    if (!eventsByLocal.has(event.local)) eventsByLocal.set(event.local, []);
     eventsByLocal.get(event.local).push(event);
-    
-    // Index by code
-    if (!eventsByCode.has(event.codigoEvento)) {
-        eventsByCode.set(event.codigoEvento, []);
-    }
+    if (!eventsByCode.has(event.codigoEvento)) eventsByCode.set(event.codigoEvento, []);
     eventsByCode.get(event.codigoEvento).push(event);
-    
-    // Limit index size
-    if (eventsByLocal.get(event.local).length > maxEvents) {
-        eventsByLocal.get(event.local).shift();
-    }
-    if (eventsByCode.get(event.codigoEvento).length > maxEvents) {
-        eventsByCode.get(event.codigoEvento).shift();
-    }
+    if (eventsByLocal.get(event.local).length > maxEvents) eventsByLocal.get(event.local).shift();
+    if (eventsByCode.get(event.codigoEvento).length > maxEvents) eventsByCode.get(event.codigoEvento).shift();
 }
 
-// Generate unique command ID with counter
 function generateCommandId() {
     const timestamp = Date.now();
     commandIdCounter = (commandIdCounter + 1) % COMMAND_ID_MOD;
     return timestamp * 1000 + commandIdCounter;
 }
 
-// Validate ISEP format (4 hex digits)
 function isValidISEP(idISEP) {
+    if (VC.isValidISEP) return VC.isValidISEP(idISEP);
     if (!idISEP) return false;
     const formatted = String(idISEP).trim().toUpperCase().padStart(4, '0');
     return /^[0-9A-F]{4}$/.test(formatted);
 }
 
-// Carregar unidades ao iniciar (using global getUnits function)
+// Carregar unidades
 (async () => {
-    try {
-        console.log('🔄 Carregando unidades...');
-        units = await window.getUnits();
-        console.log(`✅ ${units.length} unidades carregadas`);
-        populateUnitSelect();
-    } catch (err) {
-        console.error('❌ Erro ao carregar unidades:', err);
-        unitSelect.innerHTML = '<option value="">Erro ao carregar unidades - Verifique a conexão</option>';
-    }
+    try { units = await window.getUnits(); populateUnitSelect(); }
+    catch (err) { console.error('❌ Erro ao carregar unidades:', err); unitSelect.innerHTML = '<option value=\"\">Erro ao carregar unidades</option>'; }
 })();
 
-// Carregar usuários ao iniciar
+// Carregar usuários
 (async () => {
-    try {
-        console.log('🔄 Carregando usuários...');
-        users = await window.UsersDB.getUsers();
-        console.log(`✅ ${users.length} usuários carregados`);
-    } catch (err) {
-        console.error('❌ Erro ao carregar usuários:', err);
-    }
+    try { users = await window.UsersDB.getUsers(); }
+    catch (err) { console.error('❌ Erro ao carregar usuários:', err); }
 })();
 
-// === THEME TOGGLE ===
+// THEME TOGGLE
 const themeToggle = document.getElementById('theme-toggle');
 const savedTheme = localStorage.getItem('theme');
-
-// Apply saved theme on load
-if (savedTheme === 'light') {
-    document.body.classList.add('light-mode');
-    themeToggle.textContent = '🌙';
-} else {
-    themeToggle.textContent = '☀️';
-}
-
+if (savedTheme === 'light') { document.body.classList.add('light-mode'); themeToggle.textContent = '🌙'; }
+else { themeToggle.textContent = '☀️'; }
 themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('light-mode');
-    
-    if (document.body.classList.contains('light-mode')) {
-        themeToggle.textContent = '🌙'; // Show moon in light mode
-        localStorage.setItem('theme', 'light');
-    } else {
-        themeToggle.textContent = '☀️'; // Show sun in dark mode
-        localStorage.setItem('theme', 'dark');
-    }
+    if (document.body.classList.contains('light-mode')) { themeToggle.textContent = '🌙'; localStorage.setItem('theme', 'light'); }
+    else { themeToggle.textContent = '☀️'; localStorage.setItem('theme', 'dark'); }
 });
 
-// Função para toggle das seções
+// Toggles
 function setupToggle(headerId, contentId) {
     const header = document.getElementById(headerId);
     const content = document.getElementById(contentId);
@@ -156,8 +177,6 @@ function setupToggle(headerId, contentId) {
         });
     }
 }
-
-// Inicializa os toggles quando o DOM carregar
 document.addEventListener('DOMContentLoaded', () => {
     setupToggle('control-header', 'control-content');
     setupToggle('events-header', 'events-content');
@@ -171,16 +190,9 @@ function populateUnitSelect() {
         opt.textContent = `${u.local} (${u.value})`;
         unitSelect.appendChild(opt);
     });
-    console.log(`✅ ${units.length} unidades adicionadas ao select`);
 }
 
-async function initCrypto() {
-    cryptoInstance = new window.ViawebCrypto(CHAVE, IV);
-}
-
-function getLastDigit(id) {
-    return parseInt(String(id).slice(-1)) || 0;
-}
+async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
 
 function getPartitionName(pos, clientId) {
     const name = partitionNames[pos] || "";
@@ -189,13 +201,11 @@ function getPartitionName(pos, clientId) {
 
 function updatePartitions(data) {
     savedPartitions = getSelectedPartitions();
-    
     partitionsList.innerHTML = '';
     data.forEach(p => {
         const cls = p.armado == 1 ? 'partition-status armado' : 'partition-status desarmado';
         const name = getPartitionName(p.pos, currentClientId);
         const statusText = p.armado == 1 ? 'Armada' : 'Desarmada';
-        
         const div = document.createElement('div');
         div.className = 'partition-item';
         div.innerHTML = `
@@ -206,15 +216,12 @@ function updatePartitions(data) {
         </label>
         `;
         partitionsList.appendChild(div);
-        
-        if (savedPartitions.includes(p.pos)) {
-            document.getElementById(`partition-${p.pos}`).checked = true;
-        }
+        if (savedPartitions.includes(p.pos)) document.getElementById(`partition-${p.pos}`).checked = true;
     });
 }
 
 function updateZones(data) {
-	savedZones = getSelectedZones();
+    savedZones = getSelectedZones();
     totalZones.textContent = data.length;
     zonesColumns.innerHTML = '';
     const perCol = 8;
@@ -235,16 +242,15 @@ function updateZones(data) {
         }
         zonesColumns.appendChild(colDiv);
     }
-	savedZones.forEach(zoneNum => {
-    	const checkbox = document.getElementById(`zone-${zoneNum}`);
-    	if (checkbox) checkbox.checked = true;
-	});
+    savedZones.forEach(zoneNum => {
+        const checkbox = document.getElementById(`zone-${zoneNum}`);
+        if (checkbox) checkbox.checked = true;
+    });
 }
 
 function processEvent(data) {
     const msg = data.oper?.[0] || data;
     const cod = msg.codigoEvento || 'N/A';
-
     if (cod === "1412") return;
 
     let id = (msg.id || '').replace(/-(evento|evento-)/g, '');
@@ -266,9 +272,7 @@ function processEvent(data) {
     if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
 
     const isArmDisarm = armDisarmCodes.includes(cod);
-    if (zonaUsuario > 0) {
-        desc += ` - ${isArmDisarm ? '' : 'Zona ' + zonaUsuario}`;
-    }
+    if (zonaUsuario > 0) desc += ` - ${isArmDisarm ? '' : 'Zona ' + zonaUsuario}`;
 
     let extraClass = '';
     if (cod === '1570') extraClass = 'inibida';
@@ -288,10 +292,9 @@ function processEvent(data) {
     };
 
     allEvents.push(ev);
-    updateSearchIndices(ev); // Update search indices for faster filtering
+    updateSearchIndices(ev);
     if (allEvents.length > maxEvents) {
         const removed = allEvents.shift();
-        // Clean up old event from indices
         const localEvents = eventsByLocal.get(removed.local);
         if (localEvents) {
             const idx = localEvents.indexOf(removed);
@@ -316,20 +319,14 @@ function processEvent(data) {
     if (isFalha || isRestauro) {
         const zona = zonaUsuario || 0;
         const key = `${local}-${cod}-${zona}`;
-
         if (isFalha) {
-            if (!activePendentes.has(key)) {
-                activePendentes.set(key, {first: ev, events: [], resolved: false});
-            }
+            if (!activePendentes.has(key)) activePendentes.set(key, {first: ev, events: [], resolved: false});
             activePendentes.get(key).events.push(ev);
         }
-
         if (isRestauro) {
             const falhaCod = cod.replace(/^3/, '1');
             const falhaKey = `${local}-${falhaCod}-${zona}`;
-            if (activePendentes.has(falhaKey)) {
-                activePendentes.get(falhaKey).resolved = true;
-            }
+            if (activePendentes.has(falhaKey)) activePendentes.get(falhaKey).resolved = true;
         }
     }
 
@@ -345,13 +342,9 @@ function updateCounts() {
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
     const lowerTerm = term.toLowerCase();
-    
-    // Performance: Use indices for exact matches when possible
     if (term && !term.includes(' ')) {
-        // Check if searching by exact local or code
         const upperTerm = term.toUpperCase();
         if (eventsByLocal.has(upperTerm) || eventsByCode.has(upperTerm)) {
-            // Can use index for faster filtering
             rows.forEach(row => {
                 const localCell = row.cells[0]?.textContent || '';
                 row.style.display = localCell.toUpperCase().includes(upperTerm) ? '' : 'none';
@@ -359,8 +352,6 @@ function filterEvents(term) {
             return;
         }
     }
-    
-    // Fallback to full text search
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
         row.style.display = text.includes(lowerTerm) ? '' : 'none';
@@ -372,21 +363,14 @@ function updateEventList() {
     const filterTerm = eventsFilter.value.toLowerCase();
     eventList.innerHTML = '';
     let sourceEvents = [];
-
     if (currentTab === 'all') sourceEvents = allEvents;
-    else if (currentTab === 'alarms') {
-        activeAlarms.forEach(group => sourceEvents.push({group, type: 'alarm'}));
-    } else if (currentTab === 'pendentes') {
-        activePendentes.forEach(group => {
-            if (!group.resolved) sourceEvents.push({group, type: 'pendente'});
-        });
-    } else if (currentTab === 'sistema') sourceEvents = allEvents.filter(ev => sistemaCodes.includes(ev.codigoEvento));
+    else if (currentTab === 'alarms') activeAlarms.forEach(group => sourceEvents.push({group, type: 'alarm'}));
+    else if (currentTab === 'pendentes') activePendentes.forEach(group => { if (!group.resolved) sourceEvents.push({group, type: 'pendente'}); });
+    else if (currentTab === 'sistema') sourceEvents = allEvents.filter(ev => sistemaCodes.includes(ev.codigoEvento));
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
     else if (currentTab === 'historico') sourceEvents = allEvents;
 
-    // Performance: Limit to last 300 events
     let filtered = sourceEvents.slice(-300);
-
     if (filterTerm) {
         filtered = filtered.filter(item => {
             let ev = item.group ? item.group.first : item;
@@ -395,16 +379,13 @@ function updateEventList() {
         });
     }
 
-    // Performance: Virtual scrolling - only display last 100 events at a time
     const maxDisplayEvents = 100;
     const displayEvents = filtered.slice(-maxDisplayEvents).reverse();
 
     displayEvents.forEach(item => {
         let ev, count = 1;
-        if (item.group) {
-            ev = item.group.first;
-            count = item.group.events.length + 1;
-        } else ev = item;
+        if (item.group) { ev = item.group.first; count = item.group.events.length + 1; }
+        else ev = item;
 
         const tr = eventList.insertRow();
         tr.className = `event-row ${ev.extraClass || ''}`;
@@ -420,21 +401,10 @@ function updateEventList() {
         else if (cod.startsWith('16')) tr.classList.add('teste');
 
         const partName = getPartitionName(ev.particao, ev.clientId);
-
         let desc = ev.descricao;
-
         if (count > 1) desc += ` (${count} eventos)`;
 
-        // Tipos especiais (apenas para arm/desarm)
-        const tipos = {
-            1: '[Monitoramento]',
-            2: '[Facilitador]',
-            3: '[Uso Único]',
-            4: '[Uso Único]',
-            5: '[Uso Único]',
-            6: '[TI - Manutenção]'
-        };
-
+        const tipos = { 1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Uso Único]', 4: '[Uso Único]', 5: '[Uso Único]', 6: '[TI - Manutenção]' };
         let complemento = ev.complemento;
         let userData = null;
 
@@ -442,28 +412,17 @@ function updateEventList() {
             const zonaUsuario = Number(ev.complemento);
             const isep = String(ev.local || ev.clientId);
             const userId = String(ev.complemento);
-
-            // 1..6 recebem apenas o rótulo; demais continuam “Usuário <id>”
-            if (tipos[zonaUsuario]) {
-                desc += ` ${tipos[zonaUsuario]}`;
-                console.log('Resolved user data TIPOS: ' + tipos[zonaUsuario]);
-            } else {
-                desc += `Usuário ${ev.complemento}`;
-                console.log('Resolved user data: ' + desc);
-            }
-            // Resolve usuário via ID_USUARIO no mesmo ISEP
+            if (tipos[zonaUsuario]) desc += ` ${tipos[zonaUsuario]}`;
+            else desc += `Usuário ${ev.complemento}`;
             const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
             userData = usersByIsep.find(u => String(u.ID_USUARIO) === userId) || null;
-            if (userData && !tipos[zonaUsuario]) {
-                desc = ev.descricao + window.UsersDB.formatUserName(userData);
-                //complemento = window.UsersDB.formatUserName(userData);
-            }
+            if (userData && !tipos[zonaUsuario]) desc = ev.descricao + window.UsersDB.formatUserName(userData);
         }
 
         tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
 
+        // Tooltip handlers (restaurado)
         if (userData) {
-       // if (desc) {
             let hoverTimer = null;
             tr.addEventListener('mouseenter', () => {
                 hoverTimer = setTimeout(() => {
@@ -485,8 +444,7 @@ function updateEventList() {
             }
         };
     });
-    
-    // Show info if more events are available
+
     if (filtered.length > maxDisplayEvents) {
         const infoRow = eventList.insertRow(0);
         infoRow.className = 'event-info';
@@ -502,13 +460,12 @@ function openCloseModal(group, type) {
     procedureText.focus();
 }
 
+// Tooltip (restaurado)
 function showTooltip(element, userData) {
-    hideTooltip(); // Remove any existing tooltip
-    
+    hideTooltip();
     const tooltip = document.createElement('div');
     tooltip.className = 'user-tooltip';
     tooltip.textContent = window.UsersDB.formatUserInfo(userData);
-    
     const rect = element.getBoundingClientRect();
     tooltip.style.position = 'fixed';
     tooltip.style.left = rect.left + 'px';
@@ -519,74 +476,34 @@ function showTooltip(element, userData) {
 }
 
 function hideTooltip() {
-    if (currentTooltip) {
-        currentTooltip.remove();
-        currentTooltip = null;
-    }
+    if (currentTooltip) currentTooltip.remove();
+    currentTooltip = null;
 }
 
+// Seleção de cliente a partir do evento (restaurado)
 function selectClientFromEvent(ev) {
     const isep = ev.local || ev.clientId;
     if (!isep) return;
-    
-    console.log('🎯 Selecionando cliente do evento:', isep);
-    
-    // Clear unit filter first
     unitSearch.value = '';
-    
-    // Repopulate full list
     populateUnitSelect();
-    
-    // Procura unidade com esse ISEP
     const unit = units.find(u => String(u.value) === String(isep));
-    
     if (unit) {
-        // Seleciona no dropdown
         unitSelect.value = unit.value;
-        // Dispara evento change para carregar dados
         unitSelect.dispatchEvent(new Event('change'));
-        
-        // Expande seção de controle se estiver fechada
         const controlHeader = document.getElementById('control-header');
         const controlContent = document.getElementById('control-content');
-        if (controlHeader.classList.contains('collapsed')) {
-            controlHeader.classList.remove('collapsed');
-            controlContent.classList.remove('collapsed');
-        }
-        
-        // Scroll suave até o controle
-        document.getElementById('control-panel-section').scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
-        });
-        
-        console.log('✅ Cliente selecionado:', unit.local);
+        if (controlHeader.classList.contains('collapsed')) { controlHeader.classList.remove('collapsed'); controlContent.classList.remove('collapsed'); }
+        document.getElementById('control-panel-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
-        console.warn('⚠️ Cliente não encontrado na lista:', isep);
         alert(`Cliente ${isep} não encontrado na lista de unidades`);
     }
 }
 
 function sendCommand(data) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.error('❌ WebSocket não conectado');
-        return false;
-    }
-    
-    // Check WebSocket buffer before sending
-    if (ws.bufferedAmount > WS_BUFFER_LIMIT) {
-        console.error('❌ Buffer WebSocket cheio, aguardando...');
-        return false;
-    }
-    
-    try {
-        ws.send(JSON.stringify(data));
-        console.log('📤 Comando enviado para bridge:', JSON.stringify(data));
-        return true;
-    } catch (e) { 
-        console.error('❌ Erro ao enviar:', e); 
-        return false; 
-    }
+    if (!ws || ws.readyState !== WebSocket.OPEN) { console.error('❌ WebSocket não conectado'); return false; }
+    if (ws.bufferedAmount > WS_BUFFER_LIMIT) { console.error('❌ Buffer WebSocket cheio, aguardando...'); return false; }
+    try { ws.send(JSON.stringify(data)); return true; }
+    catch (e) { console.error('❌ Erro ao enviar:', e); return false; }
 }
 
 function getSelectedPartitions() {
@@ -598,74 +515,136 @@ function getSelectedZones() {
 }
 
 function armarParticoes(idISEP, particoes, zonas) {
-    // Validate ISEP before sending
-    if (!isValidISEP(idISEP)) {
-        console.error('❌ ISEP inválido:', idISEP);
-        alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.');
-        return;
-    }
-    
-    // Validate input
-    if (!particoes || particoes.length === 0) {
-        alert('Selecione ao menos uma partição');
-        return;
-    }
-    
+    if (!isValidISEP(idISEP)) { alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.'); return; }
+    if (!particoes || particoes.length === 0) { alert('Selecione ao menos uma partição'); return; }
     const cmdId = generateCommandId();
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
-    const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
+    const cmd = VC.armPartitionsCommand
+        ? VC.armPartitionsCommand(isepFormatted, particoes, zonas, 8790, cmdId)
+        : { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "armar", password: 8790, inibir: zonas.length ? zonas : undefined, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
     sendCommand(cmd);
 }
 
 function desarmarParticoes(idISEP, particoes) {
-    // Validate ISEP before sending
-    if (!isValidISEP(idISEP)) {
-        console.error('❌ ISEP inválido:', idISEP);
-        alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.');
-        return;
-    }
-    
-    // Validate input
-    if (!particoes || particoes.length === 0) {
-        alert('Selecione ao menos uma partição');
-        return;
-    }
-    
+    if (!isValidISEP(idISEP)) { alert('ID ISEP inválido. Deve ter 4 dígitos hexadecimais.'); return; }
+    if (!particoes || particoes.length === 0) { alert('Selecione ao menos uma partição'); return; }
     const cmdId = generateCommandId();
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
-    const cmd = { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
+    const cmd = VC.disarmPartitionsCommand
+        ? VC.disarmPartitionsCommand(isepFormatted, particoes, 8790, cmdId)
+        : { oper: [{ acao: "executar", idISEP: isepFormatted, id: cmdId, comando: [{ cmd: "desarmar", password: 8790, particoes }] }] };
     pendingCommands.set(cmdId, () => fetchPartitionsAndZones(idISEP));
     sendCommand(cmd);
     setTimeout(() => fetchPartitionsAndZones(idISEP), 5000);
 }
 
 function fetchPartitionsAndZones(idISEP) {
-    console.log('🚀 fetchPartitionsAndZones chamada com idISEP:', idISEP, '| Tipo:', typeof idISEP);
-    
-    // Validate ISEP
-    if (!isValidISEP(idISEP)) {
-        console.error('❌ ISEP inválido:', idISEP);
-        return;
-    }
-    
-    // Garante que idISEP seja string de 4 dígitos (sem conversão!)
+    if (!isValidISEP(idISEP)) { console.error('❌ ISEP inválido:', idISEP); return; }
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
-    console.log('📝 idISEP formatado (sem conversão):', isepFormatted);
-    
     const id1 = generateCommandId();
     const id2 = generateCommandId();
-    pendingCommands.set(id1, resp => resp.resposta && updatePartitions(resp.resposta));
-    pendingCommands.set(id2, resp => resp.resposta && updateZones(resp.resposta));
-    
-    const cmd1 = { oper: [{ acao: "executar", idISEP: isepFormatted, id: id1, comando: [{ cmd: "particoes" }] }] };
-    const cmd2 = { oper: [{ acao: "executar", idISEP: isepFormatted, id: id2, comando: [{ cmd: "zonas" }] }] };
-    
-    console.log('📤 Comando 1 (partições):', JSON.stringify(cmd1));
-    console.log('📤 Comando 2 (zonas):', JSON.stringify(cmd2));
-    
+    pendingCommands.set(id1, resp => handlePartitionsResponse(resp));
+    pendingCommands.set(id2, resp => handleZonesResponse(resp));
+
+    const cmd1 = VC.getPartitionsCommand ? VC.getPartitionsCommand(isepFormatted, id1) : { oper: [{ acao: "executar", idISEP: isepFormatted, id: id1, comando: [{ cmd: "particoes" }] }] };
+    const cmd2 = VC.getZonesCommand ? VC.getZonesCommand(isepFormatted, id2) : { oper: [{ acao: "executar", idISEP: isepFormatted, id: id2, comando: [{ cmd: "zonas" }] }] };
+
     sendCommand(cmd1);
     sendCommand(cmd2);
+}
+
+// Busca status de TODOS os clientes ao conectar
+function fetchAllClientStatuses() {
+    const cmdId = generateCommandId();
+    pendingCommands.set(cmdId, resp => handleListarClientesAllResponse(resp));
+    const cmd = VC.createListarClientesCommand ? VC.createListarClientesCommand(undefined, cmdId) : { oper: [{ id: cmdId, acao: "listarClientes" }] };
+    sendCommand(cmd);
+}
+
+// Busca status de um cliente específico (para refresh pontual)
+function fetchClientStatus(idISEP) {
+    if (!isValidISEP(idISEP)) { console.error('❌ ISEP inválido para listarClientes:', idISEP); return; }
+    const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
+    const cmdId = generateCommandId();
+    pendingCommands.set(cmdId, resp => handleListarClientesResponse(resp, isepFormatted));
+    const cmd = VC.createListarClientesCommand
+        ? VC.createListarClientesCommand([isepFormatted], cmdId)
+        : { oper: [{ id: cmdId, acao: "listarClientes", idISEP: [isepFormatted] }] };
+    sendCommand(cmd);
+}
+
+function handlePartitionsResponse(resp) {
+    const data = resp?.resposta;
+    if (!data || data.length === 0) return;
+    if (data[0]?.cmd === 'erro') {
+        setUnitStatus('offline', null, currentClientId);
+        //alert(`Central offline ao consultar partições: ${data[0].mensagem || 'Erro'}`);
+        return;
+    }
+    updatePartitions(data);
+    setUnitStatus('online', null, currentClientId);
+}
+
+function handleZonesResponse(resp) {
+    const data = resp?.resposta;
+    if (!data || data.length === 0) return;
+    if (data[0]?.cmd === 'erro') {
+        setUnitStatus('offline', null, currentClientId); // sem alert
+        return;
+    }
+    updateZones(data);
+    setUnitStatus('online', null, currentClientId);
+}
+
+// Aplica status (online/offline + since) em cache e, se selecionado, no UI
+function applyStatusFromViaweb(viawebArr) {
+    viawebArr.forEach(vw => {
+        (vw.cliente || []).forEach(cli => {
+            const isep = String(cli.idISEP || '').toUpperCase();
+            if (!isValidISEP(isep)) return;
+
+            let latestTs = null;
+            let latestIsOnline = null;
+            const meios = Array.isArray(cli.meio) ? cli.meio : [];
+            meios.forEach(m => {
+                const onTs = m?.online ? Number(m.online) * 1000 : null;
+                const offTs = m?.offline ? Number(m.offline) * 1000 : null;
+                if (onTs && (latestTs === null || onTs > latestTs)) { latestTs = onTs; latestIsOnline = true; }
+                if (offTs && (latestTs === null || offTs > latestTs)) { latestTs = offTs; latestIsOnline = false; }
+            });
+
+            if (latestTs === null) {
+                if (cli.online === 1) latestIsOnline = true;
+                else if (cli.online === 0) latestIsOnline = false;
+                latestTs = Date.now();
+            }
+
+            const prev = statusCache.get(isep);
+            if (!prev || prev.since < latestTs || prev.status !== (latestIsOnline ? 'online' : 'offline')) {
+                statusCache.set(isep, { status: latestIsOnline ? 'online' : 'offline', since: latestTs });
+                if (currentClientId && String(currentClientId).toUpperCase() === isep) {
+                    setUnitStatus(latestIsOnline ? 'online' : 'offline', latestTs, isep);
+                }
+            }
+        });
+    });
+}
+
+function handleListarClientesAllResponse(resp) {
+    if (resp?.erro) { console.warn('listarClientes ALL erro:', resp.descricao || resp.erro); return; }
+    const viawebArr = resp?.viaweb;
+    if (!viawebArr || !Array.isArray(viawebArr)) return;
+    applyStatusFromViaweb(viawebArr);
+}
+
+function handleListarClientesResponse(resp, isepFormatted) {
+    if (resp?.erro) { console.warn('listarClientes erro:', resp.descricao || resp.erro); return; }
+    const viawebArr = resp?.viaweb;
+    if (!viawebArr || !Array.isArray(viawebArr)) return;
+    applyStatusFromViaweb(viawebArr.filter(vw =>
+        (vw.cliente || []).some(cli => String(cli.idISEP).toUpperCase() === isepFormatted.toUpperCase())
+    ));
 }
 
 function updateStatus(connected) {
@@ -675,122 +654,132 @@ function updateStatus(connected) {
     document.getElementById('status-text').textContent = 'Viaweb - Cotrijal';
 }
 
+// Suporta múltiplos JSON concatenados (SOH \u0001)
+function parseJsonStream(raw) {
+    if (typeof raw !== 'string') return [];
+    const out = [];
+    raw.split(/\u0001+/g).forEach(chunk => {
+        const s = chunk.trim();
+        if (!s) return;
+        // encontra o primeiro '{' ou '[' para ignorar prefixos binários/lixo
+        const idx = s.search(/[{\[]/);
+        if (idx === -1) return;
+        const candidate = s.slice(idx);
+        try {
+            out.push(JSON.parse(candidate));
+        } catch (e) {
+            // em vez de lançar erro, apenas loga de forma silenciosa
+            console.warn('[WS] Descarta chunk inválido (parse JSON falhou):', e);
+        }
+    });
+    return out;
+}
+
 function connectWebSocket() {
     if (ws) ws.close();
-    ws = new WebSocket(WS_URL)
+    ws = new WebSocket(WS_URL);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = async () => {
-        console.log('[WS] Conectado');
         clearTimeout(reconnectTimer);
-        reconnectAttempts = 0; // Reset attempts on successful connection
+        reconnectAttempts = 0;
         updateStatus(true);
         armButton.disabled = disarmButton.disabled = true;
-        // Não precisa mais inicializar crypto - bridge faz isso
-        console.log('[WS] Pronto para enviar');
+        // Busca status de todos os clientes na conexão
+        fetchAllClientStatuses();
     };
 
     ws.onmessage = async (event) => {
-        console.log('[WS] Mensagem recebida:', event.data);
         try {
-            // Bridge já descriptografou - recebe JSON puro
-            const data = JSON.parse(event.data);
-            console.log('[WS] Dados recebidos:', data);
-
-            if (data.oper && Array.isArray(data.oper)) {
-                for (const op of data.oper) {
-                    if (op.acao === 'evento') {
-                        processEvent(data);
-                        ws.send(JSON.stringify({ resp: [{ id: op.id }] }));
-                        console.log('[WS] ACK enviado para evento', op.id);
-                        return;
+            const raw = typeof event.data === 'string' ? event.data : '';
+            const payloads = raw ? parseJsonStream(raw) : [JSON.parse(event.data)];
+            payloads.forEach(data => {
+                if (data.oper && Array.isArray(data.oper)) {
+                    for (const op of data.oper) {
+                        if (op.acao === 'evento') {
+                            processEvent(data);
+                            ws.send(JSON.stringify({ resp: [{ id: op.id }] }));
+                            return;
+                        }
                     }
                 }
-            }
-
-            if (data.resp && Array.isArray(data.resp)) {
-                data.resp.forEach(r => {
-                    if (pendingCommands.has(r.id)) {
-                        pendingCommands.get(r.id)(r);
-                        pendingCommands.delete(r.id);
-                    }
-                });
-            }
-        } catch (e) {
-            console.error('[WS] Erro ao processar mensagem:', e);
-        }
+                if (data.resp && Array.isArray(data.resp)) {
+                    data.resp.forEach(r => {
+                        if (pendingCommands.has(r.id)) {
+                            pendingCommands.get(r.id)(r);
+                            pendingCommands.delete(r.id);
+                        }
+                    });
+                }
+            });
+        } catch (e) { console.error('[WS] Erro ao processar mensagem:', e); }
     };
 
     ws.onclose = () => {
-        console.log('[WS] Desconectado');
         updateStatus(false);
         armButton.disabled = disarmButton.disabled = true;
-        partitionsList.innerHTML = zonesColumns.innerHTML = '';
-        totalZones.textContent = '0';
+        clearPartitionsAndZones();
         cryptoInstance = null;
-        
-        // Exponential backoff for reconnection
+        setUnitStatus('offline', null, currentClientId);
         reconnectAttempts++;
         const delay = Math.min(reconnectDelay * Math.pow(2, reconnectAttempts - 1), maxReconnectDelay);
-        
         reconnectTimer = setTimeout(connectWebSocket, delay);
-        console.log(`[WS] Reconectando em ${delay/1000}s... (tentativa ${reconnectAttempts})`);
     };
 
     ws.onerror = (e) => console.error('[WS] Erro WS:', e);
 }
 
+// Troca de unidade
 unitSelect.addEventListener('change', () => {
     const val = unitSelect.value;
-    console.log('🔍 ===== SELEÇÃO DE UNIDADE =====');
-    console.log('📌 Value do select:', val, '| Tipo:', typeof val);
-    
     const unit = units.find(u => String(u.value) === String(val));
-    console.log('📌 Unidade encontrada:', unit);
-    
     if (unit) {
         selectedEvent = { idISEP: String(unit.value) };
         currentClientId = String(unit.value);
         clientNumber.textContent = unit.local || unit.label;
-        
-        // Habilita TODOS os botões
+
+        // Aplica status do cache imediatamente (se existir)
+        applyCachedStatus(String(unit.value).toUpperCase());
+
+        // Se já sabemos que está offline, limpa listas (sem alert)
+        const cached = statusCache.get(String(unit.value).toUpperCase());
+        if (cached && cached.status === 'offline') {
+            clearPartitionsAndZones();
+        }
+
         armButton.disabled = false;
         disarmButton.disabled = false;
         armAllButton.disabled = false;
         disarmAllButton.disabled = false;
         togglePartitionsBtn.disabled = false;
         toggleZonesBtn.disabled = false;
-        
-        console.log('📤 idISEP que será enviado:', unit.value);
-        console.log('🔍 Tipo do idISEP:', typeof unit.value);
-        console.log('🔍 selectedEvent:', selectedEvent);
-        
+
         fetchPartitionsAndZones(String(unit.value));
+        fetchClientStatus(String(unit.value));
         if (autoUpdateCheckbox.checked) {
             clearInterval(updateInterval);
-            updateInterval = setInterval(() => fetchPartitionsAndZones(String(unit.value)), 30000);
+            updateInterval = setInterval(() => {
+                fetchPartitionsAndZones(String(unit.value));
+                fetchClientStatus(String(unit.value));
+            }, 30000);
         }
     } else {
         selectedEvent = null;
         currentClientId = null;
         clientNumber.textContent = "Nenhum selecionado";
-        
-        // Desabilita TODOS os botões
+        setUnitStatus(null);
         armButton.disabled = true;
         disarmButton.disabled = true;
         armAllButton.disabled = true;
         disarmAllButton.disabled = true;
         togglePartitionsBtn.disabled = true;
         toggleZonesBtn.disabled = true;
-        
-        partitionsList.innerHTML = '';
-        zonesColumns.innerHTML = '';
-        totalZones.textContent = '0';
+        clearPartitionsAndZones();
         clearInterval(updateInterval);
-        console.log('❌ Nenhuma unidade encontrada para o value:', val);
     }
 });
 
+// Busca por unidade (filtro)
 unitSearch.addEventListener('input', e => {
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
@@ -806,14 +795,21 @@ unitSearch.addEventListener('input', e => {
     }, 300);
 });
 
+// Botões armar/desarmar
 armButton.addEventListener('click', () => selectedEvent && getSelectedPartitions().length ? armarParticoes(selectedEvent.idISEP, getSelectedPartitions(), getSelectedZones()) : alert('Selecione partição'));
 disarmButton.addEventListener('click', () => selectedEvent && getSelectedPartitions().length ? desarmarParticoes(selectedEvent.idISEP, getSelectedPartitions()) : alert('Selecione partição'));
 
+// Auto update
 autoUpdateCheckbox.addEventListener('change', () => {
-    if (autoUpdateCheckbox.checked && selectedEvent) updateInterval = setInterval(() => fetchPartitionsAndZones(selectedEvent.idISEP), 30000);
-    else clearInterval(updateInterval);
+    if (autoUpdateCheckbox.checked && selectedEvent) {
+        updateInterval = setInterval(() => {
+            fetchPartitionsAndZones(selectedEvent.idISEP);
+            fetchClientStatus(selectedEvent.idISEP);
+        }, 30000);
+    } else clearInterval(updateInterval);
 });
 
+// Tabs e filtro
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -821,13 +817,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         updateEventList();
     });
 });
-
 eventsFilter.addEventListener('input', () => updateEventList());
 
+// Modal close
 confirmCloseEvent.onclick = () => {
     if (selectedPendingEvent) {
         const {group, type} = selectedPendingEvent;
-        console.log('Encerrado:', group.first.local, 'Procedimento:', procedureText.value);
         if (type === 'alarm') activeAlarms.delete(group.first.local);
         else {
             const key = `${group.first.local}-${group.first.codigoEvento}-${group.first.complemento}`;
@@ -840,97 +835,42 @@ confirmCloseEvent.onclick = () => {
         selectedPendingEvent = null;
     }
 };
-
 cancelCloseEvent.onclick = () => {
     closeEventModal.style.display = 'none';
     procedureText.value = '';
     selectedPendingEvent = null;
 };
 
+// Toggles marcar/desmarcar todos
 togglePartitionsBtn.addEventListener('click', () => {
     const checkboxes = document.querySelectorAll('#partitions-list input[type="checkbox"]');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-    
-    if (allChecked) {
-        // Se todos estão marcados, desmarca todos
-        checkboxes.forEach(cb => cb.checked = false);
-        togglePartitionsBtn.innerHTML = '☑️ Todas';
-    } else {
-        // Se nem todos estão marcados, marca todos
-        checkboxes.forEach(cb => cb.checked = true);
-        togglePartitionsBtn.innerHTML = '☐ Nenhuma';
-    }
+    if (allChecked) { checkboxes.forEach(cb => cb.checked = false); togglePartitionsBtn.innerHTML = '☑️ Todas'; }
+    else { checkboxes.forEach(cb => cb.checked = true); togglePartitionsBtn.innerHTML = '☐ Nenhuma'; }
 });
-
 toggleZonesBtn.addEventListener('click', () => {
     const checkboxes = document.querySelectorAll('#zones-columns input[type="checkbox"]');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-    
-    if (allChecked) {
-        // Se todos estão marcados, desmarca todos
-        checkboxes.forEach(cb => cb.checked = false);
-        toggleZonesBtn.innerHTML = '☑️ Todas';
-    } else {
-        // Se nem todos estão marcados, marca todos
-        checkboxes.forEach(cb => cb.checked = true);
-        toggleZonesBtn.innerHTML = '☐ Nenhuma';
-    }
+    if (allChecked) { checkboxes.forEach(cb => cb.checked = false); toggleZonesBtn.innerHTML = '☑️ Todas'; }
+    else { checkboxes.forEach(cb => cb.checked = true); toggleZonesBtn.innerHTML = '☐ Nenhuma'; }
 });
 
+// Armar/Desarmar todas
 armAllButton.addEventListener('click', () => {
-    if (!selectedEvent) {
-        alert('Selecione uma unidade primeiro');
-        return;
-    }
-    // Seleciona todas as partições
+    if (!selectedEvent) { alert('Selecione uma unidade primeiro'); return; }
     document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
-    
-    // Atualiza texto do toggle de partições
-    const allChecked = Array.from(document.querySelectorAll('#partitions-list input[type="checkbox"]'))
-        .every(cb => cb.checked);
-    if (allChecked) {
-        togglePartitionsBtn.innerHTML = '☐ Nenhuma';
-    } else {
-        togglePartitionsBtn.innerHTML = '☑️ Todas';
-    }
-    
     const partitions = getSelectedPartitions();
     const zones = getSelectedZones();
-    
-    if (partitions.length === 0) {
-        alert('Nenhuma partição disponível');
-        return;
-    }
-    
+    if (partitions.length === 0) { alert('Nenhuma partição disponível'); return; }
     if (confirm(`Armar ${partitions.length} partição(ões)?`)) {
         armarParticoes(selectedEvent.idISEP, partitions, zones);
     }
 });
-
 disarmAllButton.addEventListener('click', () => {
-    if (!selectedEvent) {
-        alert('Selecione uma unidade primeiro');
-        return;
-    }
-
+    if (!selectedEvent) { alert('Selecione uma unidade primeiro'); return; }
     document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
-
-    // Atualiza texto do toggle de partições
-    const allChecked = Array.from(document.querySelectorAll('#partitions-list input[type="checkbox"]'))
-        .every(cb => cb.checked);
-    if (allChecked) {
-        togglePartitionsBtn.innerHTML = '☐ Nenhuma';
-    } else {
-        togglePartitionsBtn.innerHTML = '☑️ Todas';
-    }
-
     const partitions = getSelectedPartitions();
-    
-    if (partitions.length === 0) {
-        alert('Nenhuma partição disponível');
-        return;
-    }
-    
+    if (partitions.length === 0) { alert('Nenhuma partição disponível'); return; }
     if (confirm(`Desarmar ${partitions.length} partição(ões)?`)) {
         desarmarParticoes(selectedEvent.idISEP, partitions);
     }
@@ -938,42 +878,20 @@ disarmAllButton.addEventListener('click', () => {
 
 connectWebSocket();
 
-// === SERVICE WORKER REGISTRATION ===
+// SERVICE WORKER
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
-            .then((registration) => {
-                console.log('[SW] Service Worker registered:', registration.scope);
-            })
-            .catch((error) => {
-                console.log('[SW] Service Worker registration failed:', error);
-            });
+            .then(registration => console.log('[SW] Service Worker registered:', registration.scope))
+            .catch(error => console.log('[SW] Service Worker registration failed:', error));
     });
 }
 
-// === EXPORTAÇÕES PARA HOT RELOAD ===
-// Usa getters para manter referências atualizadas
-Object.defineProperty(window, 'allEvents', {
-    get: () => allEvents,
-    set: (val) => { allEvents = val; }
-});
-Object.defineProperty(window, 'activeAlarms', {
-    get: () => activeAlarms,
-    set: (val) => { activeAlarms = val; }
-});
-Object.defineProperty(window, 'activePendentes', {
-    get: () => activePendentes,
-    set: (val) => { activePendentes = val; }
-});
-Object.defineProperty(window, 'currentClientId', {
-    get: () => currentClientId,
-    set: (val) => { currentClientId = val; }
-});
-Object.defineProperty(window, 'selectedEvent', {
-    get: () => selectedEvent,
-    set: (val) => { selectedEvent = val; }
-});
-
-// Funções podem ser exportadas diretamente
+// HOT RELOAD exports
+Object.defineProperty(window, 'allEvents', { get: () => allEvents, set: (val) => { allEvents = val; } });
+Object.defineProperty(window, 'activeAlarms', { get: () => activeAlarms, set: (val) => { activeAlarms = val; } });
+Object.defineProperty(window, 'activePendentes', { get: () => activePendentes, set: (val) => { activePendentes = val; } });
+Object.defineProperty(window, 'currentClientId', { get: () => currentClientId, set: (val) => { currentClientId = val; } });
+Object.defineProperty(window, 'selectedEvent', { get: () => selectedEvent, set: (val) => { selectedEvent = val; } });
 window.updateCounts = updateCounts;
 window.updateEventList = updateEventList;

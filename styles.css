@@ -16,7 +16,6 @@ body.light-mode {
     --bg-dark: #f8fafc; --bg-card: #ffffff; --bg-hover: #e2e8f0;
     --text-primary: #0f172a; --text-secondary: #475569; --border: #cbd5e1;
     --shadow: rgba(0, 0, 0, 0.1);
-    --gradient-start: #f1f5f9; --gradient-end: #e0e7ff;
 }
 
 /* Theme toggle button */
@@ -323,3 +322,12 @@ textarea:focus { outline: none; border-color: var(--primary); }
     background: var(--primary);
     color: white;
 }
+
+/* Status da central (online/offline) */
+.client-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+.client-status.online { color: var(--success); }
+.client-status.offline { color: var(--danger); }
