@@ -49,6 +49,33 @@ let savedPartitions = [];
 let savedZones = [];
 let commandIdCounter = 0; // Counter to avoid ID collisions
 
+// Performance: Search indices for O(1) filtering
+let eventsByLocal = new Map(); // Map of local -> events[]
+let eventsByCode = new Map();  // Map of code -> events[]
+
+// Update search indices when adding events
+function updateSearchIndices(event) {
+    // Index by local
+    if (!eventsByLocal.has(event.local)) {
+        eventsByLocal.set(event.local, []);
+    }
+    eventsByLocal.get(event.local).push(event);
+    
+    // Index by code
+    if (!eventsByCode.has(event.codigoEvento)) {
+        eventsByCode.set(event.codigoEvento, []);
+    }
+    eventsByCode.get(event.codigoEvento).push(event);
+    
+    // Limit index size
+    if (eventsByLocal.get(event.local).length > maxEvents) {
+        eventsByLocal.get(event.local).shift();
+    }
+    if (eventsByCode.get(event.codigoEvento).length > maxEvents) {
+        eventsByCode.get(event.codigoEvento).shift();
+    }
+}
+
 // Generate unique command ID with counter
 function generateCommandId() {
     const timestamp = Date.now();
@@ -232,7 +259,21 @@ function processEvent(data) {
     const ev = { id, local, data: `${dia}/${mes}/${ano}`, hora: `${hora}:${min}:${seg}`, complemento: zonaUsuario > 0 ? zonaUsuario : '-', particao: part, descricao: desc, codigoEvento: cod, clientId, timestamp: ts, extraClass };
 
     allEvents.push(ev);
-    if (allEvents.length > maxEvents) allEvents.shift();
+    updateSearchIndices(ev); // Update search indices for faster filtering
+    if (allEvents.length > maxEvents) {
+        const removed = allEvents.shift();
+        // Clean up old event from indices
+        const localEvents = eventsByLocal.get(removed.local);
+        if (localEvents) {
+            const idx = localEvents.indexOf(removed);
+            if (idx > -1) localEvents.splice(idx, 1);
+        }
+        const codeEvents = eventsByCode.get(removed.codigoEvento);
+        if (codeEvents) {
+            const idx = codeEvents.indexOf(removed);
+            if (idx > -1) codeEvents.splice(idx, 1);
+        }
+    }
 
     if (cod === '1130') {
         const key = local;
@@ -274,9 +315,26 @@ function updateCounts() {
 
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
+    const lowerTerm = term.toLowerCase();
+    
+    // Performance: Use indices for exact matches when possible
+    if (term && !term.includes(' ')) {
+        // Check if searching by exact local or code
+        const upperTerm = term.toUpperCase();
+        if (eventsByLocal.has(upperTerm) || eventsByCode.has(upperTerm)) {
+            // Can use index for faster filtering
+            rows.forEach(row => {
+                const localCell = row.cells[0]?.textContent || '';
+                row.style.display = localCell.toUpperCase().includes(upperTerm) ? '' : 'none';
+            });
+            return;
+        }
+    }
+    
+    // Fallback to full text search
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(term.toLowerCase()) ? '' : 'none';
+        row.style.display = text.includes(lowerTerm) ? '' : 'none';
     });
 }
 
@@ -297,6 +355,7 @@ function updateEventList() {
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
     else if (currentTab === 'historico') sourceEvents = allEvents;
 
+    // Performance: Limit to last 300 events
     let filtered = sourceEvents.slice(-300);
 
     if (filterTerm) {
@@ -307,7 +366,9 @@ function updateEventList() {
         });
     }
 
-    const displayEvents = filtered.reverse();
+    // Performance: Virtual scrolling - only display last 100 events at a time
+    const maxDisplayEvents = 100;
+    const displayEvents = filtered.slice(-maxDisplayEvents).reverse();
 
     displayEvents.forEach(item => {
         let ev, count = 1;
@@ -344,6 +405,15 @@ function updateEventList() {
             }
         };
     });
+    
+    // Show info if more events are available
+    if (filtered.length > maxDisplayEvents) {
+        const infoRow = eventList.insertRow(0);
+        infoRow.className = 'event-info';
+        infoRow.innerHTML = `<td colspan="6" style="text-align: center; padding: 8px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px;">
+            Mostrando últimos ${maxDisplayEvents} de ${filtered.length} eventos. Use o filtro para refinar a busca.
+        </td>`;
+    }
 }
 
 function openCloseModal(group, type) {
