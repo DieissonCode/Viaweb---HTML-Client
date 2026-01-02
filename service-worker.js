@@ -51,6 +51,11 @@ self.addEventListener('fetch', (event) => {
         event.request.url.includes('/api/')) {
         return;
     }
+    
+    // Skip HEAD requests (cannot be cached)
+    if (event.request.method === 'HEAD') {
+        return;
+    }
 
     event.respondWith(
         caches.match(event.request)

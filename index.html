@@ -317,11 +317,10 @@
     <script src="units-db.js"></script>
     <script src="main.js"></script>
     <script>
-        const body = document.body;
+        // Panel collapse/expand functionality
         const panelsContainer = document.getElementById('panels-container');
         const leftPanel = document.getElementById('control-panel-section');
         const rightPanel = document.getElementById('events-section');
-        const unitSelect = document.getElementById('unit-select');
 
         function updateLayout() {
             panelsContainer.classList.remove('left-closed', 'right-closed');
@@ -369,19 +368,22 @@
             handleClick(rightPanel, leftPanel);
         });
 
-        unitSelect.addEventListener('wheel', (e) => {
+        // Use unitSelect from main.js (already declared there)
+        const unitSelectEl = document.getElementById('unit-select');
+        unitSelectEl.addEventListener('wheel', (e) => {
             e.preventDefault();
 
             const delta = e.deltaY > 0 ? 1 : -1;
-            let newIndex = unitSelect.selectedIndex + delta;
+            let newIndex = unitSelectEl.selectedIndex + delta;
 
             if (newIndex < 0) newIndex = 0;
-            if (newIndex >= unitSelect.options.length) newIndex = unitSelect.options.length - 1;
+            if (newIndex >= unitSelectEl.options.length) newIndex = unitSelectEl.options.length - 1;
 
-            unitSelect.selectedIndex = newIndex;
-            unitSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            unitSelectEl.selectedIndex = newIndex;
+            unitSelectEl.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
+        // Initialize layout on page load
         updateLayout();
     </script>
     <script src="hot-reload.js"></script>
