@@ -261,18 +261,31 @@ function processEvent(data) {
     const hora = d.getHours().toString().padStart(2,'0');
     const min = d.getMinutes().toString().padStart(2,'0');
     const seg = d.getSeconds().toString().padStart(2,'0');
+
     let desc = eventosDB[cod] || `Evento ${cod}`;
     if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
 
     const isArmDisarm = armDisarmCodes.includes(cod);
     if (zonaUsuario > 0) {
-        desc += ` - ${isArmDisarm ? 'Usuário' : 'Zona'} ${zonaUsuario}`;
+        desc += ` - ${isArmDisarm ? '' : 'Zona ' + zonaUsuario}`;
     }
 
     let extraClass = '';
     if (cod === '1570') extraClass = 'inibida';
 
-    const ev = { id, local, data: `${dia}/${mes}/${ano}`, hora: `${hora}:${min}:${seg}`, complemento: zonaUsuario > 0 ? zonaUsuario : '-', particao: part, descricao: desc, codigoEvento: cod, clientId, timestamp: ts, extraClass };
+    const ev = {
+        id,
+        local,
+        data: `${dia}/${mes}/${ano}`,
+        hora: `${hora}:${min}:${seg}`,
+        complemento: zonaUsuario > 0 ? zonaUsuario : '-',
+        particao: part,
+        descricao: desc,
+        codigoEvento: cod,
+        clientId,
+        timestamp: ts,
+        extraClass
+    };
 
     allEvents.push(ev);
     updateSearchIndices(ev); // Update search indices for faster filtering
@@ -396,50 +409,73 @@ function updateEventList() {
         const tr = eventList.insertRow();
         tr.className = `event-row ${ev.extraClass || ''}`;
         const cod = ev.codigoEvento;
+        const isArmDisarmCode = armDisarmCodes.includes(cod);
+
         if (cod === '1130') tr.classList.add('alarm');
         else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline');
         else if (cod === '3AA6') tr.classList.add('online');
         else if (cod.startsWith('3')) tr.classList.add('restauro');
         else if (falhaCodes.includes(cod)) tr.classList.add('falha');
-        else if (armDisarmCodes.includes(cod)) tr.classList.add('armedisarm');
+        else if (isArmDisarmCode) tr.classList.add('armedisarm');
         else if (cod.startsWith('16')) tr.classList.add('teste');
 
         const partName = getPartitionName(ev.particao, ev.clientId);
+
         let desc = ev.descricao;
+
         if (count > 1) desc += ` (${count} eventos)`;
-        
-        // For arm/disarm events, try to get user info
+
+        // Tipos especiais (apenas para arm/desarm)
+        const tipos = {
+            1: '[Monitoramento]',
+            2: '[Facilitador]',
+            3: '[Uso Único]',
+            4: '[Uso Único]',
+            5: '[Uso Único]',
+            6: '[TI - Manutenção]'
+        };
+
         let complemento = ev.complemento;
         let userData = null;
-        if (armDisarmCodes.includes(cod) && ev.complemento && ev.complemento !== '-') {
-            const userId = String(ev.complemento);
+
+        if (isArmDisarmCode && ev.complemento && ev.complemento !== '-') {
+            const zonaUsuario = Number(ev.complemento);
             const isep = String(ev.local || ev.clientId);
-            userData = window.UsersDB.getUserByMatriculaAndIsep(userId, isep);
-            
-            if (userData) {
-                complemento = window.UsersDB.formatUserName(userData);
+            const userId = String(ev.complemento);
+
+            // 1..6 recebem apenas o rótulo; demais continuam “Usuário <id>”
+            if (tipos[zonaUsuario]) {
+                desc += ` ${tipos[zonaUsuario]}`;
+                console.log('Resolved user data TIPOS: ' + tipos[zonaUsuario]);
+            } else {
+                desc += `Usuário ${ev.complemento}`;
+                console.log('Resolved user data: ' + desc);
+            }
+            // Resolve usuário via ID_USUARIO no mesmo ISEP
+            const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
+            userData = usersByIsep.find(u => String(u.ID_USUARIO) === userId) || null;
+            if (userData && !tipos[zonaUsuario]) {
+                desc = ev.descricao + window.UsersDB.formatUserName(userData);
+                //complemento = window.UsersDB.formatUserName(userData);
             }
         }
 
         tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
 
-        // Tooltip for events with user data
         if (userData) {
+       // if (desc) {
             let hoverTimer = null;
-            
             tr.addEventListener('mouseenter', () => {
                 hoverTimer = setTimeout(() => {
                     showTooltip(tr, userData);
-                }, 2000); // 2 seconds
+                }, 2000);
             });
-            
             tr.addEventListener('mouseleave', () => {
                 if (hoverTimer) clearTimeout(hoverTimer);
                 hideTooltip();
             });
         }
 
-        // Click no evento seleciona o cliente automaticamente
         tr.style.cursor = 'pointer';
         tr.onclick = () => {
             if (item.group) {
@@ -466,7 +502,6 @@ function openCloseModal(group, type) {
     procedureText.focus();
 }
 
-// Tooltip functions
 function showTooltip(element, userData) {
     hideTooltip(); // Remove any existing tooltip
     
@@ -479,7 +514,6 @@ function showTooltip(element, userData) {
     tooltip.style.left = rect.left + 'px';
     tooltip.style.top = (rect.bottom + 5) + 'px';
     tooltip.style.zIndex = '10000';
-    
     document.body.appendChild(tooltip);
     currentTooltip = tooltip;
 }
@@ -904,7 +938,6 @@ disarmAllButton.addEventListener('click', () => {
 
 connectWebSocket();
 
-
 // === SERVICE WORKER REGISTRATION ===
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -917,7 +950,6 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
-
 
 // === EXPORTAÇÕES PARA HOT RELOAD ===
 // Usa getters para manter referências atualizadas

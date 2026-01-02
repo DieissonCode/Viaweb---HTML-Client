@@ -122,7 +122,7 @@ button {
 }
 button:hover:not(:disabled) { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 6px var(--shadow); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
-#arm-button { background: var(--success); margin-right: 8px; }
+#arm-button { background: var(--success); }
 #arm-button:hover:not(:disabled) { background: var(--success-dark); }
 #disarm-button { background: var(--danger); }
 #disarm-button:hover:not(:disabled) { background: var(--danger-dark); }

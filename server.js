@@ -207,7 +207,7 @@ app.get('/api/users', async (req, res) => {
             SELECT 
                 a.[ID_USUARIO],
                 a.[NOME] AS matricula,
-                SUBSTRING(b.[NUMERO],2,4) as idIsep,
+                b.[NUMERO] as idIsep,
                 c.[nome],
                 c.[cargo],
                 c.[telefone1],
