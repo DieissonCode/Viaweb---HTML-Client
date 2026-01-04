@@ -116,6 +116,24 @@ let currentTooltip = null;
 
 let eventsByLocal = new Map();
 let eventsByCode = new Map();
+let unitSelectDebounce = null;
+
+class DebouncedSelector { // Controller OO para debounce de seleção de unidade
+    constructor(delayMs, onSelect) {
+        this.delayMs = delayMs;
+        this.onSelect = onSelect;
+        this.timer = null;
+    }
+
+    schedule(value) {
+        clearTimeout(this.timer);
+        this.timer = setTimeout(() => this.onSelect(value), this.delayMs);
+    }
+
+    cancel() {
+        clearTimeout(this.timer);
+    }
+}
 
 function updateSearchIndices(event) {
     if (!eventsByLocal.has(event.local)) eventsByLocal.set(event.local, []);
@@ -701,6 +719,54 @@ function updateStatus(connected) {
     document.getElementById('status-text').textContent = 'Viaweb - Cotrijal';
 }
 
+function applyUnitSelection(val) { // Aplica a seleção de unidade (era o corpo do listener antigo)
+    const unit = units.find(u => String(u.value) === String(val));
+    if (unit) {
+        selectedEvent = { idISEP: String(unit.value) };
+        currentClientId = String(unit.value);
+        clientNumber.textContent = unit.local || unit.label;
+
+        // Aplica status do cache imediatamente (se existir)
+        applyCachedStatus(String(unit.value).toUpperCase());
+
+        // Se já sabemos que está offline, limpa listas (sem alert)
+        const cached = statusCache.get(String(unit.value).toUpperCase());
+        if (cached && cached.status === 'offline') {
+            clearPartitionsAndZones();
+        }
+
+        armButton.disabled = false;
+        disarmButton.disabled = false;
+        armAllButton.disabled = false;
+        disarmAllButton.disabled = false;
+        togglePartitionsBtn.disabled = false;
+        toggleZonesBtn.disabled = false;
+
+        fetchPartitionsAndZones(String(unit.value));
+        fetchClientStatus(String(unit.value));
+        if (autoUpdateCheckbox.checked) {
+            clearInterval(updateInterval);
+            updateInterval = setInterval(() => {
+                fetchPartitionsAndZones(String(unit.value));
+                fetchClientStatus(String(unit.value));
+            }, 30000);
+        }
+    } else {
+        selectedEvent = null;
+        currentClientId = null;
+        clientNumber.textContent = "Nenhum selecionado";
+        setUnitStatus(null);
+        armButton.disabled = true;
+        disarmButton.disabled = true;
+        armAllButton.disabled = true;
+        disarmAllButton.disabled = true;
+        togglePartitionsBtn.disabled = true;
+        toggleZonesBtn.disabled = true;
+        clearPartitionsAndZones();
+        clearInterval(updateInterval);
+    }
+}
+
 function parseJsonStream(raw) {
     if (typeof raw !== 'string') return [];
     const out = [];
@@ -776,52 +842,10 @@ function connectWebSocket() {
 }
 
 unitSelect.addEventListener('change', () => {
-    const val = unitSelect.value;
-    const unit = units.find(u => String(u.value) === String(val));
-    if (unit) {
-        selectedEvent = { idISEP: String(unit.value) };
-        currentClientId = String(unit.value);
-        clientNumber.textContent = unit.local || unit.label;
-
-        // Aplica status do cache imediatamente (se existir)
-        applyCachedStatus(String(unit.value).toUpperCase());
-
-        // Se já sabemos que está offline, limpa listas (sem alert)
-        const cached = statusCache.get(String(unit.value).toUpperCase());
-        if (cached && cached.status === 'offline') {
-            clearPartitionsAndZones();
-        }
-
-        armButton.disabled = false;
-        disarmButton.disabled = false;
-        armAllButton.disabled = false;
-        disarmAllButton.disabled = false;
-        togglePartitionsBtn.disabled = false;
-        toggleZonesBtn.disabled = false;
-
-        fetchPartitionsAndZones(String(unit.value));
-        fetchClientStatus(String(unit.value));
-        if (autoUpdateCheckbox.checked) {
-            clearInterval(updateInterval);
-            updateInterval = setInterval(() => {
-                fetchPartitionsAndZones(String(unit.value));
-                fetchClientStatus(String(unit.value));
-            }, 30000);
-        }
-    } else {
-        selectedEvent = null;
-        currentClientId = null;
-        clientNumber.textContent = "Nenhum selecionado";
-        setUnitStatus(null);
-        armButton.disabled = true;
-        disarmButton.disabled = true;
-        armAllButton.disabled = true;
-        disarmAllButton.disabled = true;
-        togglePartitionsBtn.disabled = true;
-        toggleZonesBtn.disabled = true;
-        clearPartitionsAndZones();
-        clearInterval(updateInterval);
+    if (!unitSelectDebounce) {
+        unitSelectDebounce = new DebouncedSelector(300, applyUnitSelection);
     }
+    unitSelectDebounce.schedule(unitSelect.value);
 });
 
 unitSearch.addEventListener('input', e => {
