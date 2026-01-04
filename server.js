@@ -50,7 +50,6 @@ const CORS_WHITELIST = [
     'http://localhost',
     'http://192.9.100.100',
     'http://127.0.0.1',
-    // Add more allowed origins as needed
 ];
 
 let globalTcpClient = null;
@@ -59,6 +58,9 @@ let globalIvSend = null;
 let globalIvRecv = null;
 let tcpIdentSent = false;
 let dbPool = null;
+
+// Buffer de recepção para montar blocos completos (múltiplos de 16)
+let tcpRecvBuffer = Buffer.alloc(0);
 
 function encrypt(plainText, keyBuffer, ivBuffer) {
     const plainBytes = Buffer.from(plainText, 'utf8');
@@ -89,6 +91,13 @@ function decrypt(encryptedBuffer, keyBuffer, ivBuffer) {
 
 function hexToBuffer(hexString) {
     return Buffer.from(hexString, 'hex');
+}
+
+// Loga até maxBytes em hex, espaçado
+function formatHex(buffer, maxBytes = 128) {
+    if (!buffer) return '';
+    const slice = buffer.slice(0, maxBytes);
+    return slice.toString('hex').match(/.{1,2}/g)?.join(' ') || '';
 }
 
 async function connectDatabase() {
@@ -161,7 +170,6 @@ function rateLimiter(req, res, next) {
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     
-    // Allow requests with no origin (e.g., mobile apps, Postman)
     if (!origin || CORS_WHITELIST.includes(origin) || CORS_WHITELIST.includes('*')) {
         res.setHeader('Access-Control-Allow-Origin', origin || '*');
     }
@@ -342,7 +350,6 @@ wss.on('connection', (ws) => {
     let wsIvRecv = hexToBuffer(IV);
     const wsKeyBuffer = hexToBuffer(CHAVE);
     
-    // Setup heartbeat
     ws.isAlive = true;
     ws.on('pong', () => {
         ws.isAlive = true;
@@ -380,19 +387,33 @@ wss.on('connection', (ws) => {
         });
         
         globalTcpClient.on('data', (data) => {
+            // Log chunk recebido
+            logger.debug(`📥 TCP chunk (${data.length} bytes) HEX=${formatHex(data)}`);
+            // Acumula no buffer
+            tcpRecvBuffer = Buffer.concat([tcpRecvBuffer, data]);
+            // Se não for múltiplo de 16, aguarda mais dados
+            if (tcpRecvBuffer.length % 16 !== 0) {
+                logger.debug(`⏳ Aguardando completar bloco: buffer=${tcpRecvBuffer.length} bytes`);
+                return;
+            }
             try {
-                const decrypted = decrypt(data, globalKeyBuffer, globalIvRecv);
-                globalIvRecv = data.slice(-16);
-                logger.debug('📩 TCP→WS: ' + decrypted.substring(0, 100) + '...');
+                const decrypted = decrypt(tcpRecvBuffer, globalKeyBuffer, globalIvRecv);
+                // Atualiza IV de recepção com o último bloco do buffer processado
+                globalIvRecv = tcpRecvBuffer.slice(-16);
+                logger.debug('📩 TCP→WS (decrypted): ' + decrypted.substring(0, 200) + '...');
                 metrics.recordEvent();
+                // Limpa buffer após processar
+                tcpRecvBuffer = Buffer.alloc(0);
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
                         client.send(decrypted);
                     }
                 });
             } catch (e) {
-                logger.error('❌ Erro ao descriptografar TCP→WS: ' + e.message);
+                logger.error(`❌ Erro ao descriptografar TCP→WS: ${e.message} | HEX=${formatHex(tcpRecvBuffer)}`);
                 metrics.recordError();
+                // Descartar buffer para não ficar preso em estado inválido
+                tcpRecvBuffer = Buffer.alloc(0);
             }
         });
         
@@ -404,6 +425,7 @@ wss.on('connection', (ws) => {
             logger.warn('🔴 Conexão TCP fechada');
             globalTcpClient = null;
             tcpIdentSent = false;
+            tcpRecvBuffer = Buffer.alloc(0);
         });
     }
 
