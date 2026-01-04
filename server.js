@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const express = require('express');
 const mssql = require('mssql');
 const dbConfig = require('./db-config');
+const { spawn } = require('child_process');
 
 // Try to use structured logger, fallback to console if winston not available
 let logger;
@@ -107,6 +108,8 @@ async function connectDatabase() {
 
 const app = express();
 
+app.use(express.json({ limit: '10kb' }));
+
 // Rate limiting middleware (simple implementation)
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
@@ -173,7 +176,56 @@ app.use((req, res, next) => {
     }
 });
 
+function escapePw(str = '') {
+    return String(str).replace(/'/g, "''");
+}
+
+function authenticateAd(username, password, domain = 'Cotrijal') {
+    return new Promise((resolve, reject) => {
+        const u = escapePw(username);
+        const p = escapePw(password);
+        const script = `
+            $u='${u}'
+            $p='${p}'
+            Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+            $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Domain','${domain}')
+            if ($ctx.ValidateCredentials($u,$p)) { 'OK' } else { 'FAIL' }
+        `;
+        const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
+        let out = '', err = '';
+        ps.stdout.on('data', d => out += d.toString());
+        ps.stderr.on('data', d => err += d.toString());
+        ps.on('close', code => {
+            if (err) return reject(new Error(err.trim()));
+            resolve(out.trim() === 'OK');
+        });
+        ps.on('error', reject);
+    });
+}
+
 // Apply rate limiting to API routes
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+        return res.status(400).json({ success: false, error: 'Usuário e senha são obrigatórios' });
+    }
+    try {
+        const ok = await authenticateAd(username, password, 'Cotrijal');
+        if (!ok) return res.status(401).json({ success: false, error: 'Credenciais inválidas' });
+        return res.json({
+            success: true,
+            user: {
+                username,
+                domain: 'Cotrijal',
+                displayName: `${username}@Cotrijal`
+            }
+        });
+    } catch (e) {
+        logger.error('❌ AD auth error: ' + e.message);
+        return res.status(500).json({ success: false, error: 'Falha ao autenticar no AD' });
+    }
+});
+
 app.use('/api', rateLimiter);
 
 app.get('/api/units', async (req, res) => {

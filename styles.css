@@ -190,3 +190,13 @@ textarea:focus { outline:none; border-color:var(--primary); }
 .client-status { font-size:12px; color:var(--text-secondary); margin-left:8px; }
 .client-status.online { color:var(--success); }
 .client-status.offline { color:var(--danger); }
+
+/* Barra de status do usuário */
+#auth-status-bar { display:flex; align-items:center; justify-content:flex-end; gap:10px; background:var(--bg-card); border-radius:6px; padding:8px 12px; box-shadow:0 2px 4px var(--shadow); }
+#auth-user-label { font-size:13px; color:var(--text-secondary); }
+button.small { padding:6px 12px; font-size:12px; }
+
+/* Modal de auth reaproveita base */
+.auth-modal { display:none; }
+.auth-modal-content { max-width:420px; width:92%; gap:12px; }
+.auth-error { background:rgba(239,68,68,.12); color:#fecdd3; border:1px solid var(--danger); border-radius:6px; padding:8px 10px; font-size:12px; }

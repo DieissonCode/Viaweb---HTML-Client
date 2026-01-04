@@ -37,6 +37,8 @@ if (!clientStatusEl && clientNumber?.parentElement) {
     clientNumber.parentElement.appendChild(clientStatusEl);
 }
 
+let currentUser = null;
+
 let unitStatus = null;
 let unitStatusSince = null;
 
@@ -212,7 +214,107 @@ class CloseEventModal {
     }
 }
 
+class AuthManager {
+    constructor() {
+        this.overlay = document.getElementById('auth-overlay');
+        this.userLabel = document.getElementById('auth-user-label');
+        this.logoutBtn = document.getElementById('auth-logout-btn');
+        this.inputUser = document.getElementById('auth-username');
+        this.inputPass = document.getElementById('auth-password');
+        this.errorBox = document.getElementById('auth-error');
+        this.submitBtn = document.getElementById('auth-submit-btn');
+        this.cancelBtn = document.getElementById('auth-cancel-btn');
+
+        this.bindEvents();
+        this.renderUser();
+        this.show(); // força login na carga
+    }
+
+    bindEvents() {
+        this.submitBtn?.addEventListener('click', () => this.login());
+        this.cancelBtn?.addEventListener('click', () => this.hide());
+        this.logoutBtn?.addEventListener('click', () => this.logout());
+        this.overlay?.addEventListener('click', (e) => {
+            if (e.target === this.overlay) this.hide();
+        });
+    }
+
+    renderUser() {
+        if (currentUser) {
+            this.userLabel.textContent = `Usuário: ${currentUser.displayName}`;
+            this.logoutBtn.style.display = 'inline-flex';
+        } else {
+            this.userLabel.textContent = 'Usuário: Não autenticado';
+            this.logoutBtn.style.display = 'none';
+        }
+    }
+
+    show() {
+        if (this.overlay) this.overlay.style.display = 'block';
+        this.error('');
+        this.inputPass.value = '';
+        this.inputUser.focus();
+    }
+
+    hide() {
+        if (this.overlay) this.overlay.style.display = 'none';
+    }
+
+    error(msg) {
+        if (!this.errorBox) return;
+        if (msg) {
+            this.errorBox.textContent = msg;
+            this.errorBox.style.display = 'block';
+        } else {
+            this.errorBox.style.display = 'none';
+            this.errorBox.textContent = '';
+        }
+    }
+
+    async login() {
+        const username = this.inputUser?.value.trim();
+        const password = this.inputPass?.value;
+        if (!username || !password) {
+            this.error('Informe usuário e senha');
+            return;
+        }
+        this.error('');
+        this.submitBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                this.error(data.error || 'Falha de login');
+                return;
+            }
+            currentUser = data.user;
+            window.currentUser = currentUser; // expõe globalmente
+            this.renderUser();
+            this.hide();
+        } catch (err) {
+            console.error('❌ Login error:', err);
+            this.error('Erro ao autenticar. Verifique sua rede.');
+        } finally {
+            this.submitBtn.disabled = false;
+            this.inputPass.value = '';
+        }
+    }
+
+    logout() {
+        currentUser = null;
+        window.currentUser = null;
+        this.renderUser();
+        this.show();
+    }
+}
+
 const closeEventUI = new CloseEventModal();
+const authManager = new AuthManager();
 
 function updateSearchIndices(event) {
     if (!eventsByLocal.has(event.local)) eventsByLocal.set(event.local, []);
@@ -975,5 +1077,6 @@ Object.defineProperty(window, 'activeAlarms', { get: () => activeAlarms, set: (v
 Object.defineProperty(window, 'activePendentes', { get: () => activePendentes, set: (val) => { activePendentes = val; } });
 Object.defineProperty(window, 'currentClientId', { get: () => currentClientId, set: (val) => { currentClientId = val; } });
 Object.defineProperty(window, 'selectedEvent', { get: () => selectedEvent, set: (val) => { selectedEvent = val; } });
+Object.defineProperty(window, 'currentUser', { get: () => currentUser, set: (val) => { currentUser = val; } });
 window.updateCounts = updateCounts;
 window.updateEventList = updateEventList;

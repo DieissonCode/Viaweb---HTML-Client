@@ -213,7 +213,10 @@
             🌙
         </button>
     </h1>
-
+    <div id="auth-status-bar">
+        <span id="auth-user-label">Usuário: Não autenticado</span>
+        <button id="auth-logout-btn" class="ghost small" style="display:none">Sair</button>
+    </div>
     <div class="panels-container" id="panels-container">
         <div class="panel panel-left" id="control-panel-section">
             <div class="section-header" id="control-header">
@@ -345,8 +348,7 @@
             <button id="cancelCloseEvent" class="ghost">❌ Cancelar</button>
             </footer>
         </div>
-    </div>
-</div>
+        </div>
     </div>
 
     <!-- Load dependencies in order (no ESM modules) -->
@@ -426,5 +428,28 @@
         updateLayout();
     </script>
     <script src="hot-reload.js"></script>
+    <div id="auth-overlay" class="modal auth-modal">
+        <div class="modal-content auth-modal-content">
+            <header class="modal-header">
+            <div>
+                <p class="eyebrow">Autenticação</p>
+                <h2>Login AD (Cotrijal)</h2>
+            </div>
+            </header>
+
+            <section class="modal-section">
+            <label for="auth-username">Usuário (sem domínio)</label>
+            <input type="text" id="auth-username" placeholder="ex: joao.silva" autocomplete="username">
+            <label for="auth-password">Senha</label>
+            <input type="password" id="auth-password" placeholder="Senha" autocomplete="current-password">
+            <div id="auth-error" class="auth-error" style="display:none"></div>
+            </section>
+
+            <footer class="modal-footer">
+            <button id="auth-submit-btn">✅ Entrar</button>
+            <button id="auth-cancel-btn" class="ghost">❌ Cancelar</button>
+            </footer>
+        </div>
+    </div>
 </body>
 </html>
