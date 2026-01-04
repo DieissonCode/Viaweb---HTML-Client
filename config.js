@@ -57,8 +57,8 @@
         "1401": "Desativado",
         "3401": "Ativado",
 
-        "1402": "Partição Desativada",
-        "3402": "Partição Ativada",
+        "1402": "Desativado",
+        "3402": "Ativado",
 
         "3403": "Auto Ativação", "1410": "Acesso via Cabo Serial", "3456": "Ativado Forçado", "1570": "Inibido sensor",
         "1412": "Acesso remoto VIAWEB", "3407": "Programação lacrada (nível)", "3408": "Programação liberada (nível)",

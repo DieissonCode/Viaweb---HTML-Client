@@ -397,18 +397,18 @@ function updateEventList() {
         let desc = ev.descricao;
         if (count > 1) desc += ` (${count} eventos)`;
 
-        const tipos = { 1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Uso Único]', 4: '[Uso Único]', 5: '[Uso Único]', 6: '[TI - Manutenção]' };
+        const tipos = { 0: '[Horário Programado]',1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Uso Único]', 4: '[Uso Único]', 5: '[Uso Único]', 6: '[TI - Manutenção]' };
         let complemento = ev.complemento;
         let userData = null;
-
+        console.log(isArmDisarmCode && ev.complemento && ev.complemento !== '-' + ' | ' + ev.descricao);
         if (isArmDisarmCode && ev.complemento && ev.complemento !== '-') {
             const zonaUsuario = Number(ev.complemento);
             const isep = String(ev.local || ev.clientId);
-            const userId = String(ev.complemento);
-            if (tipos[zonaUsuario]) desc += ` ${tipos[zonaUsuario]}`;
-            else desc += `Usuário ${ev.complemento}`;
+            if (tipos[zonaUsuario]) desc += `${tipos[zonaUsuario]}`;
+            else desc += `Usuário Não Cadastrado | ${ev.complemento}`;
             const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
-            userData = usersByIsep.find(u => String(u.ID_USUARIO) === userId) || null;
+            userData = usersByIsep.find(u => Number(u.ID_USUARIO) === zonaUsuario) || null;
+            console.log('Busca usuário para ISEP ' + isep + ' e ID_USUARIO ' + zonaUsuario + ':', userData + ' | ' + ev.descricao + ' | ' + desc);
             if (userData && !tipos[zonaUsuario]) desc = ev.descricao + window.UsersDB.formatUserName(userData);
         }
 
@@ -656,7 +656,7 @@ function parseJsonStream(raw) {
             out.push(JSON.parse(candidate));
         } catch (e) {
             // em vez de lançar erro, apenas loga de forma silenciosa
-            console.warn('[WS] Descarta chunk inválido (parse JSON falhou):', e);
+            //console.warn('[WS] Descarta chunk inválido (parse JSON falhou):', candidate);
         }
     });
     return out;
