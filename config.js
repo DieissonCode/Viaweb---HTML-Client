@@ -21,6 +21,9 @@
         "1130": "Disparo",
         "3130": "Restauro",
 
+        "1140": "Disparo",
+        "3140": "Restauro",
+
         "1100": "Emergência Médica", "1110": "Incêndio", "1120": "Emergência Silenciosa", "1121": "Coação",
 
         "1144": "Violação de Tamper",

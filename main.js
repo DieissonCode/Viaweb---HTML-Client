@@ -1161,12 +1161,52 @@ async function logClosureToServer(group, type, procedureText) {
     }
 }
 
+async function logClosureToServer(group, type, procedureText) {
+    const ev = group?.first || {};
+    const codigo = ev.codigoEvento || ev.codigo || ev.code || '';
+    const payload = {
+        event: {
+            codigoEvento: codigo,
+            codigo,
+            complemento: ev.complemento ?? '',
+            particao: ev.particao ?? '',
+            local: ev.local ?? '',
+            clientId: ev.clientId ?? '',
+            descricao: ev.descricao ?? '',
+            timestamp: ev.timestamp ?? Date.now()
+        },
+        closure: {
+            type,
+            procedureText,
+            user: window.currentUser || null
+        }
+    };
+
+    const resp = await fetch('/api/logs/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const text = await resp.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (_) {}
+    if (!resp.ok || data.success === false) {
+        throw new Error(data.error || text || 'Falha ao salvar encerramento');
+    }
+}
+
+// SUBSTITUA todo o handler por este
 confirmCloseEvent.onclick = async () => {
     if (selectedPendingEvent) {
         const { group, type } = selectedPendingEvent;
 
-        // registra no banco antes de remover da UI
-        await logClosureToServer(group, type, procedureText.value || '');
+        try {
+            await logClosureToServer(group, type, procedureText.value || '');
+        } catch (err) {
+            console.error('❌ Registrar encerramento:', err);
+            alert('Não foi possível registrar o encerramento no servidor. O evento permanece aberto.\n\nDetalhes: ' + err.message);
+            return; // não fecha modal nem remove da UI
+        }
 
         if (type === 'alarm') {
             activeAlarms.delete(group.first.local);
@@ -1181,6 +1221,7 @@ confirmCloseEvent.onclick = async () => {
         selectedPendingEvent = null;
     }
 };
+
 
 cancelCloseEvent.onclick = () => {
     closeEventModal.style.display = 'none';

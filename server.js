@@ -140,16 +140,6 @@ const app = express();
 
 app.use(express.json({ limit: '10kb' }));
 
-// Garante schema LOGS no banco Logs
-(async () => {
-    try {
-        await logsRepo.ensureSchema();
-        logger.info('✅ Schema de LOGS verificado/criado');
-    } catch (e) {
-        logger.error('❌ Falha ao garantir schema de LOGS: ' + e.message);
-    }
-})();
-
 // Rate limiting middleware (simple implementation)
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
@@ -242,7 +232,6 @@ function authenticateAd(username, password, domain = 'Cotrijal') {
     });
 }
 
-// Apply rate limiting to API routes
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) {
@@ -267,9 +256,17 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/logs/close', async (req, res) => {
     const { event, closure } = req.body || {};
-    if (!closure) {
-        return res.status(400).json({ success: false, error: 'Dados de encerramento ausentes' });
+    const codigo = event?.codigoEvento || event?.codigo || event?.code;
+    const isep = event?.isep || event?.local || event?.clientId;
+    const tipo = closure?.type;
+    console.log(event, closure);
+    if (!closure || !tipo || !codigo || !isep) {
+        return res.status(400).json({
+            success: false,
+            error: 'Dados obrigatórios ausentes: codigoEvento/codigo, isep/local/clientId e type são obrigatórios'
+        });
     }
+
     try {
         await logsRepo.saveEventAndClosure(event, closure);
         return res.json({ success: true });
