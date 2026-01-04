@@ -184,6 +184,36 @@ class DebouncedSelector { // Controller OO para debounce de seleção de unidade
     }
 }
 
+// Helper: retorna todos eventos do mesmo ISEP a partir do horário do disparo
+function getAssociatedEventsForAlarm(group) {
+    if (!group || !group.first) return [];
+    const local = group.first.local || group.first.clientId;
+    const startTs = Number(group.first.timestamp) || 0;
+    const seen = new Set();
+    return allEvents
+        .filter(ev =>
+            (ev.local === local || ev.clientId === local) &&
+            Number(ev.timestamp || 0) >= startTs
+        )
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+        .filter(ev => {
+            const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+// Total de eventos associados a todos os disparos
+function getTotalAlarmEvents() {
+    let total = 0;
+    activeAlarms.forEach(group => {
+        const count = getAssociatedEventsForAlarm(group).length;
+        total += count || 1; // garante pelo menos 1
+    });
+    return total;
+}
+
 class CloseEventModal {
     constructor() {
         this.container = document.getElementById('event-history');
@@ -219,17 +249,7 @@ class CloseEventModal {
         this.container.style.display = 'block';
         if (this.titleEl) this.titleEl.textContent = 'Encerrar Disparo';
 
-        const seen = new Set();
-        const events = [group.first, ...(group.events || [])]
-            .filter(Boolean)
-            .filter(ev => {
-                const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            })
-            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
+        const events = getAssociatedEventsForAlarm(group);
         if (this.badgeEl) this.badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
 
         this.tbody.innerHTML = '';
@@ -350,7 +370,6 @@ class AuthManager {
             this.errorBox.textContent = '';
         }
     }
-
 
     async login() {
         const usernameInput = sanitizeUsername(this.inputUser?.value || '');
@@ -582,6 +601,7 @@ function processEvent(data) {
     const clientId = msg.isep || msg.contaCliente || currentClientId;
     let ts = msg.recepcao || Date.now();
     if (ts < 10000000000) ts *= 1000;
+
     const d = new Date(ts);
     const dia = d.getDate().toString().padStart(2,'0');
     const mes = (d.getMonth()+1).toString().padStart(2,'0');
@@ -599,6 +619,42 @@ function processEvent(data) {
     let extraClass = '';
     if (cod === '1570') extraClass = 'inibida';
 
+    // ----- Monta descrição com usuário (se arm/disarm) sem mutar depois -----
+    const baseDescricao = desc;
+    let displayDesc = baseDescricao;
+    let userData = null;
+    let userName = null;
+    let userId = null;
+    let userMatricula = null;
+
+    if (isArmDisarm && zonaUsuario > 0 && window.UsersDB) {
+        const tipos = {
+            0: '[Horário Programado]',
+            1: '[Monitoramento]',
+            2: '[Facilitador]',
+            3: '[Senha de Uso Único]',
+            4: '[Senha de Uso Único]',
+            5: '[Senha de Uso Único]',
+            6: '[TI - Manutenção]'
+        };
+
+        if (tipos[zonaUsuario]) {
+            displayDesc += tipos[zonaUsuario];
+        } else {
+            displayDesc += `Usuário Não Cadastrado | ${zonaUsuario}`;
+        }
+
+        const usersByIsep = window.UsersDB.getUsersByIsep(String(local)) || [];
+        userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
+
+        if (userData && !tipos[zonaUsuario]) {
+            userName = window.UsersDB.formatUserName(userData);
+            userId = userData.ID_USUARIO || null;
+            userMatricula = userData.matricula || null;
+            displayDesc = `${baseDescricao}${userName}`;
+        }
+    }
+
     const ev = {
         id,
         local,
@@ -606,13 +662,16 @@ function processEvent(data) {
         hora: `${hora}:${min}:${seg}`,
         complemento: zonaUsuario > 0 ? zonaUsuario : '-',
         particao: part,
-        descricao: desc,
+        baseDescricao,
+        descricao: displayDesc,
         codigoEvento: cod,
         clientId,
         timestamp: ts,
-        extraClass
+        extraClass,
+        userId,
+        userMatricula,
+        userName
     };
-
 
     allEvents.push(ev);
     updateSearchIndices(ev);
@@ -631,10 +690,14 @@ function processEvent(data) {
         }
     }
 
+    // Agrupa disparos por ISEP sem duplicar o primeiro
     if (cod === '1130') {
         const key = local;
-        if (!activeAlarms.has(key)) activeAlarms.set(key, {first: ev, events: []});
-        activeAlarms.get(key).events.push(ev);
+        if (!activeAlarms.has(key)) {
+            activeAlarms.set(key, { first: ev, events: [] });
+        } else {
+            activeAlarms.get(key).events.push(ev);
+        }
     }
 
     const isFalha = falhaCodes.includes(cod);
@@ -644,7 +707,7 @@ function processEvent(data) {
         const zona = zonaUsuario || 0;
         const key = `${local}-${cod}-${zona}`;
         if (isFalha) {
-            if (!activePendentes.has(key)) activePendentes.set(key, {first: ev, events: [], resolved: false});
+            if (!activePendentes.has(key)) activePendentes.set(key, { first: ev, events: [], resolved: false });
             activePendentes.get(key).events.push(ev);
         }
         if (isRestauro) {
@@ -656,6 +719,7 @@ function processEvent(data) {
 
     updateEventList();
 
+    // Envia para logs com os metadados de usuário
     fetch('/api/logs/event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -666,9 +730,12 @@ function processEvent(data) {
 }
 
 function updateCounts() {
-    alarmCount.textContent = activeAlarms.size;
-    pendCount.textContent = Array.from(activePendentes.values()).filter(g => !g.resolved).length;
+    if (alarmCount) alarmCount.textContent = activeAlarms.size; // Disparos distintos por ISEP
+    if (pendCount) pendCount.textContent = Array.from(activePendentes.values()).filter(g => !g.resolved).length;
 }
+
+window.updateCounts = updateCounts;
+
 
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
@@ -693,10 +760,11 @@ function updateEventList() {
     const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
     const filterTerm = eventsFilter.value.toLowerCase();
     eventList.innerHTML = '';
+
     let sourceEvents = [];
     if (currentTab === 'all') sourceEvents = allEvents;
-    else if (currentTab === 'alarms') activeAlarms.forEach(group => sourceEvents.push({group, type: 'alarm'}));
-    else if (currentTab === 'pendentes') activePendentes.forEach(group => { if (!group.resolved) sourceEvents.push({group, type: 'pendente'}); });
+    else if (currentTab === 'alarms') activeAlarms.forEach(group => sourceEvents.push({ group, type: 'alarm' }));
+    else if (currentTab === 'pendentes') activePendentes.forEach(group => { if (!group.resolved) sourceEvents.push({ group, type: 'pendente' }); });
     else if (currentTab === 'sistema') sourceEvents = allEvents.filter(ev => sistemaCodes.includes(ev.codigoEvento));
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
     else if (currentTab === 'historico') sourceEvents = allEvents;
@@ -704,7 +772,7 @@ function updateEventList() {
     let filtered = sourceEvents.slice(-300);
     if (filterTerm) {
         filtered = filtered.filter(item => {
-            let ev = item.group ? item.group.first : item;
+            const ev = item.group ? item.group.first : item;
             const text = `${ev.local} ${ev.descricao} ${ev.data} ${ev.hora} ${ev.complemento}`.toLowerCase();
             return text.includes(filterTerm);
         });
@@ -715,8 +783,12 @@ function updateEventList() {
 
     displayEvents.forEach(item => {
         let ev, count = 1;
-        if (item.group) { ev = item.group.first; count = item.group.events.length + 1; }
-        else ev = item;
+        if (item.group) {
+            ev = item.group.first;
+            count = 1 + (item.group.events?.length || 0);
+        } else {
+            ev = item;
+        }
 
         const tr = eventList.insertRow();
         tr.className = `event-row ${ev.extraClass || ''}`;
@@ -732,31 +804,42 @@ function updateEventList() {
         else if (cod.startsWith('16')) tr.classList.add('teste');
 
         const partName = getPartitionName(ev.particao, ev.clientId);
-        let desc = ev.descricao;
+        const descBase = ev.baseDescricao || ev.descricao || '';
+        let desc = descBase;
         if (count > 1) desc += ` (${count} eventos)`;
 
-        const tipos = { 0: '[Horário Programado]',1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Senha de Uso Único]', 4: '[Senha de Uso Único]', 5: '[Senha de Uso Único]', 6: '[TI - Manutenção]' };
-        let complemento = ev.complemento;
+        const tipos = {
+            0: '[Horário Programado]',
+            1: '[Monitoramento]',
+            2: '[Facilitador]',
+            3: '[Senha de Uso Único]',
+            4: '[Senha de Uso Único]',
+            5: '[Senha de Uso Único]',
+            6: '[TI - Manutenção]'
+        };
+
+        const complemento = ev.complemento;
         let userData = null;
-        if (isArmDisarmCode && ev.complemento && ev.complemento !== '-') {
-            const zonaUsuario = Number(ev.complemento);
-            const isep = String(ev.local || ev.clientId);
-            if (tipos[zonaUsuario]) desc += `${tipos[zonaUsuario]}`;
-            else desc += `Usuário Não Cadastrado | ${ev.complemento}`;
-            const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
-            userData = usersByIsep.find(u => Number(u.ID_USUARIO) === zonaUsuario) || null;
-            if (userData && !tipos[zonaUsuario]) desc = ev.descricao + window.UsersDB.formatUserName(userData);
-            ev.descricao = desc;
+
+        if (isArmDisarmCode && complemento && complemento !== '-') {
+            const zonaUsuario = Number(complemento);
+            if (ev.userName) {
+                desc = `${descBase}${ev.userName}${count > 1 ? ` (${count} eventos)` : ''}`;
+            } else if (tipos[zonaUsuario]) {
+                desc = `${descBase}${tipos[zonaUsuario]}${count > 1 ? ` (${count} eventos)` : ''}`;
+            } else {
+                desc = `${descBase}Usuário Não Cadastrado | ${complemento}${count > 1 ? ` (${count} eventos)` : ''}`;
+            }
+            const usersByIsep = window.UsersDB.getUsersByIsep(String(ev.local || ev.clientId)) || [];
+            userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
         }
 
-        tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
+        tr.innerHTML = `<td>${ev.local || 'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
 
         if (userData) {
             let hoverTimer = null;
             tr.addEventListener('mouseenter', () => {
-                hoverTimer = setTimeout(() => {
-                    showTooltip(tr, userData);
-                }, 2000);
+                hoverTimer = setTimeout(() => { showTooltip(tr, userData); }, 2000);
             });
             tr.addEventListener('mouseleave', () => {
                 if (hoverTimer) clearTimeout(hoverTimer);
@@ -766,11 +849,8 @@ function updateEventList() {
 
         tr.style.cursor = 'pointer';
         tr.onclick = () => {
-            if (item.group) {
-                openCloseModal(item.group, item.type);
-            } else {
-                selectClientFromEvent(ev);
-            }
+            if (item.group) openCloseModal(item.group, item.type);
+            else selectClientFromEvent(ev);
         };
     });
 
@@ -1149,29 +1229,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 eventsFilter.addEventListener('input', () => updateEventList());
 
 async function logClosureToServer(group, type, procedureText) {
-    console.log('📝 Registrando encerramento no servidor...');
-    console.log('   Evento:', group?.first || null);
-    try {
-        const payload = {
-            event: group?.first || null,
-            closure: {
-                type,
-                procedureText,
-                user: window.currentUser || null
-            }
-        };
-        console.log('   Payload:', payload);
-        await fetch('/api/logs/close', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-    } catch (err) {
-        console.error('❌ Erro ao registrar encerramento:', err);
-    }
-}
-
-async function logClosureToServer(group, type, procedureText) {
     const ev = group?.first || {};
     const codigo = ev.codigoEvento || ev.codigo || ev.code || '';
     const payload = {
@@ -1205,7 +1262,7 @@ async function logClosureToServer(group, type, procedureText) {
     }
 }
 
-// SUBSTITUA todo o handler por este
+// Handler de encerramento
 confirmCloseEvent.onclick = async () => {
     if (selectedPendingEvent) {
         const { group, type } = selectedPendingEvent;
@@ -1231,7 +1288,6 @@ confirmCloseEvent.onclick = async () => {
         selectedPendingEvent = null;
     }
 };
-
 
 cancelCloseEvent.onclick = () => {
     closeEventModal.style.display = 'none';
