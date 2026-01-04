@@ -18,8 +18,8 @@
     const falhaCodes = ["1142","1143","1144","1300","1301","1302","1321","1333","1350","1351","1381","1382","1383","1384","1385","1386"];
     const sistemaCodes = falhaCodes.concat(["3142","3143","3144","3300","3301","3302","3321","3333","3351","3381","3382","3383","3384","3385","3386"]);
     const eventosDB = {
-        "1130": "Disparo de alarme no sensor",
-        "3130": "Restauro de sensor",
+        "1130": "Disparo",
+        "3130": "Restauro",
 
         "1100": "Emergência Médica", "1110": "Incêndio", "1120": "Emergência Silenciosa", "1121": "Coação",
 
@@ -54,13 +54,13 @@
         "3142": "Restauro de Curto Circuito",
 
 
-        "1401": "Desativado",
-        "3401": "Ativado",
+        "1401": "Desarmado",
+        "3401": "Armado",
 
-        "1402": "Desativado",
-        "3402": "Ativado",
+        "1402": "Desarmado",
+        "3402": "Armado",
 
-        "3403": "Auto Ativação", "1410": "Acesso via Cabo Serial", "3456": "Ativado Forçado", "1570": "Inibido sensor",
+        "3403": "Auto Ativação", "1410": "Acesso via Cabo Serial", "3456": "Armado Forçado", "1570": "Inibido sensor",
         "1412": "Acesso remoto VIAWEB", "3407": "Programação lacrada (nível)", "3408": "Programação liberada (nível)",
         "1602": "Teste Automático", "1603": "Teste Internet", "1384": "Falha de bateria sensor sem fio", "1386": "Falha de bateria controle remoto",
 
@@ -89,8 +89,8 @@
         "AA1": "Servidor VIAWEB parado",
         "AA5": "Cliente solicita autorização",
 
-        "3AA6": "Cliente online",
-        "1AA6": "Cliente offline"
+        "3AA6": "Alarme online",
+        "1AA6": "Alarme offline"
     };
     
     // Expose to global scope

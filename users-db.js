@@ -13,6 +13,16 @@
 
     console.log(`🔗 API de usuários configurada para: ${API_URL}`);
 
+    // Title Case para cargos (respeita acentuação)
+    function toTitleCaseCargo(str = '') {
+        return String(str)
+            .toLocaleLowerCase('pt-BR')
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(p => p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1))
+            .join(' ');
+    }
+
     async function getUsers(forceRefresh = false) {
         if (!forceRefresh && cachedUsers && cacheTimestamp) {
             const now = Date.now();
@@ -119,7 +129,8 @@
         if (!user) return 'Usuário Desconhecido';
         
         const nome = user.nome || 'Sem nome';
-        const cargo = user.cargo ? ` (${user.cargo})` : '';
+        const cargoRaw = user.cargo || '';
+        const cargo = cargoRaw ? ` (${toTitleCaseCargo(cargoRaw)})` : '';
         
         return `${nome}${cargo}`;
     }
@@ -130,7 +141,7 @@
         const info = [];
         
         if (user.nome) info.push(`Nome: ${user.nome}`);
-        if (user.cargo) info.push(`Cargo: ${user.cargo}`);
+        if (user.cargo) info.push(`Cargo: ${toTitleCaseCargo(user.cargo)}`);
         if (user.setor) info.push(`Setor: ${user.setor}`);
         if (user.local) info.push(`Local: ${user.local}`);
         if (user.c_custo) info.push(`C.Custo: ${user.c_custo}`);

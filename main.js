@@ -230,7 +230,7 @@ function updateZones(data) {
             const num = String(z.pos).padStart(2,'0');
             const div = document.createElement('div');
             div.className = 'zone-item';
-            div.innerHTML = `<input type="checkbox" id="zone-${z.pos}" value="${z.pos}"><label for="zone-${z.pos}">Zona <span class="mono-number">${num}</span>: <span class="zone-status ${cls}">${txt}</span></label>`;
+            div.innerHTML = `<input type="checkbox" id="zone-${z.pos}" value="${z.pos}"><label for="zone-${z.pos}">Sensor <span class="mono-number">${num}</span>: <span class="zone-status ${cls}">${txt}</span></label>`;
             colDiv.appendChild(div);
         }
         zonesColumns.appendChild(colDiv);
@@ -265,7 +265,7 @@ function processEvent(data) {
     if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
 
     const isArmDisarm = armDisarmCodes.includes(cod);
-    if (zonaUsuario > 0) desc += ` - ${isArmDisarm ? '' : 'Zona ' + zonaUsuario}`;
+    if (zonaUsuario > 0) desc += ` - ${isArmDisarm ? '' : 'Sensor ' + zonaUsuario}`;
 
     let extraClass = '';
     if (cod === '1570') extraClass = 'inibida';
@@ -397,7 +397,7 @@ function updateEventList() {
         let desc = ev.descricao;
         if (count > 1) desc += ` (${count} eventos)`;
 
-        const tipos = { 0: '[Horário Programado]',1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Uso Único]', 4: '[Uso Único]', 5: '[Uso Único]', 6: '[TI - Manutenção]' };
+        const tipos = { 0: '[Horário Programado]',1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Senha de Uso Único]', 4: '[Senha de Uso Único]', 5: '[Senha de Uso Único]', 6: '[TI - Manutenção]' };
         let complemento = ev.complemento;
         let userData = null;
         console.log(isArmDisarmCode && ev.complemento && ev.complemento !== '-' + ' | ' + ev.descricao);
@@ -448,9 +448,62 @@ function updateEventList() {
 }
 
 function openCloseModal(group, type) {
-    selectedPendingEvent = {group, type};
+    selectedPendingEvent = { group, type };
     closeEventModal.style.display = 'block';
+    renderEventHistory(group, type); // só mostrará se for 'alarm'
     procedureText.focus();
+}
+
+function renderEventHistory(group, type) {
+    const container = document.getElementById('event-history');
+    const listEl = document.getElementById('event-history-list');
+    const titleEl = document.getElementById('closeEventTitle');
+    if (!container || !listEl) return;
+
+    // Só mostra na aba Disparos (type === 'alarm')
+    if (type !== 'alarm') {
+        container.style.display = 'none';
+        listEl.innerHTML = '';
+        if (titleEl) titleEl.textContent = 'Encerrar Evento';
+        return;
+    }
+
+    container.style.display = 'block';
+    if (titleEl) titleEl.textContent = 'Encerrar Disparo';
+
+    // Monta lista sem duplicar o primeiro evento
+    const seen = new Set();
+    const events = [group.first, ...(group.events || [])]
+        .filter(Boolean)
+        .filter(ev => {
+            const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    listEl.innerHTML = '';
+    if (events.length === 0) {
+        listEl.innerHTML = '<div class="event-history-item">Nenhum evento encontrado para este disparo.</div>';
+        return;
+    }
+
+    events.forEach(ev => {
+        const item = document.createElement('div');
+        item.className = 'event-history-item';
+        const partName = getPartitionName(ev.particao, ev.clientId);
+        const complemento = ev.complemento && ev.complemento !== '-' ? ` • Zona/Usuário ${ev.complemento}` : '';
+
+        item.innerHTML = `
+            <div class="event-history-time">${ev.data} ${ev.hora}</div>
+            <div class="event-history-desc">${ev.descricao}</div>
+            <div class="event-history-meta">
+                ISEP ${ev.local || ev.clientId || 'N/A'} • ${partName} • Código ${ev.codigoEvento}${complemento}
+            </div>
+        `;
+        listEl.appendChild(item);
+    });
 }
 
 function showTooltip(element, userData) {
