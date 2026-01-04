@@ -45,17 +45,25 @@ let currentUser = null;
         if (saved) {
             const state = JSON.parse(saved);
             if (state && state.currentUser) {
-                currentUser = state.currentUser;
-                window.currentUser = currentUser;
-                return;
+                const norm = normalizeStoredUser(state.currentUser);
+                if (norm) {
+                    currentUser = norm;
+                    window.currentUser = norm;
+                    localStorage.setItem('currentUser', JSON.stringify(norm));
+                    return;
+                }
             }
         }
         const savedLocal = localStorage.getItem('currentUser');
         if (savedLocal) {
             const user = JSON.parse(savedLocal);
-            if (user) {
-                currentUser = user;
-                window.currentUser = currentUser;
+            const norm = normalizeStoredUser(user);
+            if (norm) {
+                currentUser = norm;
+                window.currentUser = norm;
+                localStorage.setItem('currentUser', JSON.stringify(norm));
+            } else {
+                localStorage.removeItem('currentUser');
             }
         }
     } catch (e) {
@@ -343,10 +351,11 @@ class AuthManager {
         }
     }
 
+
     async login() {
-        const username = this.inputUser?.value.trim();
+        const usernameInput = sanitizeUsername(this.inputUser?.value || '');
         const password = this.inputPass?.value;
-        if (!username || !password) {
+        if (!usernameInput || !password) {
             this.error('Informe usuário e senha');
             return;
         }
@@ -357,16 +366,21 @@ class AuthManager {
             const resp = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ username: usernameInput, password })
             });
             const data = await resp.json();
             if (!data.success) {
                 this.error(data.error || 'Falha de login');
                 return;
             }
-            currentUser = data.user;
-            window.currentUser = currentUser; // expõe globalmente
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            const normalizedUser = {
+                ...data.user,
+                username: usernameInput,
+                displayName: `${usernameInput}@Cotrijal`
+            };
+            currentUser = normalizedUser;
+            window.currentUser = normalizedUser;
+            localStorage.setItem('currentUser', JSON.stringify(normalizedUser));
             this.renderUser();
             setAuthLock(false);
             this.hide();
@@ -465,6 +479,21 @@ function populateUnitSelect() {
 }
 
 async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
+
+function sanitizeUsername(raw = '') {
+    return String(raw).trim().replace(/@.*/i, ''); // remove tudo após @
+}
+
+function normalizeStoredUser(user) {
+    if (!user) return null;
+    const base = sanitizeUsername(user.username || user.displayName || '');
+    if (!base) return null;
+    return {
+        ...user,
+        username: base,
+        displayName: `${base}@Cotrijal`
+    };
+}
 
 function getPartitionName(pos, clientId) {
     const name = partitionNames[pos] || "";
