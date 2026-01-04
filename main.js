@@ -42,11 +42,21 @@ let currentUser = null;
 (function bootstrapCurrentUserFromState() {
     try {
         const saved = sessionStorage.getItem('viawebState');
-        if (!saved) return;
-        const state = JSON.parse(saved);
-        if (state && state.currentUser) {
-            currentUser = state.currentUser;
-            window.currentUser = currentUser;
+        if (saved) {
+            const state = JSON.parse(saved);
+            if (state && state.currentUser) {
+                currentUser = state.currentUser;
+                window.currentUser = currentUser;
+                return;
+            }
+        }
+        const savedLocal = localStorage.getItem('currentUser');
+        if (savedLocal) {
+            const user = JSON.parse(savedLocal);
+            if (user) {
+                currentUser = user;
+                window.currentUser = currentUser;
+            }
         }
     } catch (e) {
         console.warn('Auth bootstrap falhou:', e.message);
@@ -59,6 +69,21 @@ let unitStatusSince = null;
 // Cache global de status por ISEP
 // Map ISEP -> { status: 'online'|'offline', since: timestamp(ms) }
 const statusCache = new Map();
+
+// Bloqueio/desbloqueio de UI por autenticação
+function setAuthLock(locked) {
+    const ctrls = [
+        unitSelect, unitSearch, autoUpdateCheckbox,
+        armButton, disarmButton, armAllButton, disarmAllButton,
+        togglePartitionsBtn, toggleZonesBtn, confirmCloseEvent, cancelCloseEvent
+    ];
+    ctrls.forEach(el => { if (el) el.disabled = locked; });
+
+    document.querySelectorAll('#partitions-list input[type="checkbox"], #zones-columns input[type="checkbox"]').forEach(cb => cb.disabled = locked);
+    document.querySelectorAll('.tab-btn').forEach(btn => { btn.disabled = locked; });
+    if (eventsFilter) eventsFilter.disabled = locked;
+}
+setAuthLock(!currentUser);
 
 function setUnitStatus(newStatus, sinceTs = null, isep = null) {
     const isChange = unitStatus !== newStatus || (sinceTs && unitStatusSince !== sinceTs);
@@ -248,8 +273,10 @@ class AuthManager {
         this.renderUser();
         if (currentUser) {
             this.hide();
+            setAuthLock(false);
         } else {
             this.show();
+            setAuthLock(true);
         }
     }
 
@@ -268,6 +295,19 @@ class AuthManager {
         };
         this.inputUser?.addEventListener('keydown', handleEnter);
         this.inputPass?.addEventListener('keydown', handleEnter);
+
+        // Reabrir login clicando no rótulo quando não autenticado
+        this.userLabel?.addEventListener('click', () => {
+            if (!currentUser) this.show();
+        });
+
+        // Atalho Ctrl+L para abrir modal se não autenticado
+        document.addEventListener('keydown', (e) => {
+            if (!currentUser && e.ctrlKey && e.key.toLowerCase() === 'l') {
+                e.preventDefault();
+                this.show();
+            }
+        });
     }
 
     renderUser() {
@@ -275,7 +315,7 @@ class AuthManager {
             this.userLabel.textContent = `Usuário: ${currentUser.displayName}`;
             this.logoutBtn.style.display = 'inline-flex';
         } else {
-            this.userLabel.textContent = 'Usuário: Não autenticado';
+            this.userLabel.textContent = 'Usuário: Não autenticado (Clique aqui para Logar)';
             this.logoutBtn.style.display = 'none';
         }
     }
@@ -326,7 +366,9 @@ class AuthManager {
             }
             currentUser = data.user;
             window.currentUser = currentUser; // expõe globalmente
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
             this.renderUser();
+            setAuthLock(false);
             this.hide();
         } catch (err) {
             console.error('❌ Login error:', err);
@@ -340,7 +382,9 @@ class AuthManager {
     logout() {
         currentUser = null;
         window.currentUser = null;
+        localStorage.removeItem('currentUser');
         this.renderUser();
+        setAuthLock(true);
         this.show();
     }
 }
@@ -438,15 +482,16 @@ function updatePartitions(data) {
         const div = document.createElement('div');
         div.className = 'partition-item';
         div.innerHTML = `
-            <input type="checkbox" id="partition-${p.pos}" value="${p.pos}">
-            <span class="partition-status ${statusCls}">${statusText}</span>
-            <label for="partition-${p.pos}">
-                ${name}
-            </label>
+        
+        ${statusText}
+        <label for="partition-${p.pos}">
+            ${name}
+        </label>
         `;
         partitionsList.appendChild(div);
         if (savedPartitions.includes(p.pos)) {
-            document.getElementById(`partition-${p.pos}`).checked = true;
+            const cb = document.getElementById(`partition-${p.pos}`);
+            if (cb) cb.checked = true;
         }
     });
 }
@@ -474,13 +519,13 @@ function updateZones(data) {
                 : (z.aberta || z.disparada) ? "aberto"
                 : z.tamper ? "tamper"
                 : "ok";
-            const num = String(z.pos).padStart(2, '0');
+            const num = String(z.pos).padStart(2,'0');
 
             const div = document.createElement('div');
             div.className = 'zone-item';
             div.innerHTML = `
-                <input type="checkbox" id="zone-${z.pos}" value="${z.pos}">
-                <span class="zone-status ${cls}">${txt}</span>
+                
+                ${txt}
                 <label for="zone-${z.pos}">Sensor ${num}: ${txt}</label>
             `;
             colDiv.appendChild(div);
@@ -720,6 +765,10 @@ function hideTooltip() {
 }
 
 function selectClientFromEvent(ev) {
+    if (!currentUser) {
+        authManager?.show?.();
+        return;
+    }
     const isep = ev.local || ev.clientId;
     if (!isep) return;
     unitSearch.value = '';
@@ -738,6 +787,11 @@ function selectClientFromEvent(ev) {
 }
 
 function sendCommand(data) {
+    if (!currentUser) {
+        console.warn('❌ Comando bloqueado: usuário não autenticado');
+        authManager?.show?.();
+        return false;
+    }
     if (!ws || ws.readyState !== WebSocket.OPEN) { console.error('❌ WebSocket não conectado'); return false; }
     if (ws.bufferedAmount > WS_BUFFER_LIMIT) { console.error('❌ Buffer WebSocket cheio, aguardando...'); return false; }
     try { ws.send(JSON.stringify(data)); return true; }
@@ -889,6 +943,10 @@ function updateStatus(connected) {
 }
 
 function applyUnitSelection(val) { // Aplica a seleção de unidade (era o corpo do listener antigo)
+    if (!currentUser) {
+        authManager?.show?.();
+        return;
+    }
     const unit = units.find(u => String(u.value) === String(val));
     if (unit) {
         selectedEvent = { idISEP: String(unit.value) };
