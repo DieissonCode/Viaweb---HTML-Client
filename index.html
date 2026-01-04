@@ -317,7 +317,22 @@
             <div class="section-title">
                 <h3>Eventos deste disparo</h3>
             </div>
-            <div id="event-history-list" class="history-list"></div>
+            <div class="history-table-wrapper">
+                <table class="history-table">
+                <thead>
+                    <tr>
+                    <th>Data</th>
+                    <th>Hora</th>
+                    <th>Descrição</th>
+                    <th>Partição</th>
+                    <th>Código</th>
+                    <th>Zona/Usuário</th>
+                    <th>ISEP</th>
+                    </tr>
+                </thead>
+                <tbody id="event-history-body"></tbody>
+                </table>
+            </div>
             </section>
 
             <section class="modal-section">

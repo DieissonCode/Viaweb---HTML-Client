@@ -135,6 +135,85 @@ class DebouncedSelector { // Controller OO para debounce de seleção de unidade
     }
 }
 
+class CloseEventModal {
+    constructor() {
+        this.container = document.getElementById('event-history');
+        this.tbody = document.getElementById('event-history-body');
+        this.titleEl = document.getElementById('closeEventTitle');
+        this.badgeEl = document.getElementById('history-badge');
+        this.modal = document.getElementById('closeEventModal');
+        this.modalContent = this.modal?.querySelector('.modal-content');
+        this.procedureText = document.getElementById('procedureText');
+    }
+
+    open(group, type) {
+        selectedPendingEvent = { group, type };
+        if (this.modal) {
+            this.modal.style.display = 'block';
+            if (this.modalContent) this.modalContent.scrollTop = 0;
+        }
+        this.render(group, type);
+        this.procedureText?.focus();
+    }
+
+    render(group, type) {
+        if (!this.container || !this.tbody) return;
+
+        if (type !== 'alarm') {
+            this.container.style.display = 'none';
+            this.tbody.innerHTML = '';
+            if (this.titleEl) this.titleEl.textContent = 'Encerrar Evento';
+            if (this.badgeEl) this.badgeEl.textContent = '0 eventos';
+            return;
+        }
+
+        this.container.style.display = 'block';
+        if (this.titleEl) this.titleEl.textContent = 'Encerrar Disparo';
+
+        const seen = new Set();
+        const events = [group.first, ...(group.events || [])]
+            .filter(Boolean)
+            .filter(ev => {
+                const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+        if (this.badgeEl) this.badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
+
+        this.tbody.innerHTML = '';
+        if (events.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 7;
+            td.textContent = 'Nenhum evento encontrado para este disparo.';
+            tr.appendChild(td);
+            this.tbody.appendChild(tr);
+            return;
+        }
+
+        events.forEach(ev => {
+            const tr = document.createElement('tr');
+            const partName = getPartitionName(ev.particao, ev.clientId);
+            const complemento = ev.complemento && ev.complemento !== '-' ? ev.complemento : '-';
+            tr.innerHTML = `
+                <td>${ev.data}</td>
+                <td>${ev.hora}</td>
+                <td>${ev.descricao}</td>
+                <td>${partName}</td>
+                <td>${ev.codigoEvento}</td>
+                <td>${complemento}</td>
+                <td>${ev.local || ev.clientId || 'N/A'}</td>
+            `;
+            this.tbody.appendChild(tr);
+        });
+    }
+}
+
+const closeEventUI = new CloseEventModal();
+
 function updateSearchIndices(event) {
     if (!eventsByLocal.has(event.local)) eventsByLocal.set(event.local, []);
     eventsByLocal.get(event.local).push(event);
@@ -466,68 +545,7 @@ function updateEventList() {
 }
 
 function openCloseModal(group, type) {
-    selectedPendingEvent = { group, type };
-    closeEventModal.style.display = 'block';
-    const modalContent = closeEventModal.querySelector('.modal-content');
-    if (modalContent) modalContent.scrollTop = 0;
-    renderEventHistory(group, type); // mostra apenas em 'alarm'
-    procedureText.focus();
-}
-
-function renderEventHistory(group, type) {
-    const container = document.getElementById('event-history');
-    const listEl = document.getElementById('event-history-list');
-    const titleEl = document.getElementById('closeEventTitle');
-    const badgeEl = document.getElementById('history-badge');
-    if (!container || !listEl) return;
-
-    // Apenas disparos
-    if (type !== 'alarm') {
-        container.style.display = 'none';
-        listEl.innerHTML = '';
-        if (titleEl) titleEl.textContent = 'Encerrar Evento';
-        if (badgeEl) badgeEl.textContent = '0 eventos';
-        return;
-    }
-
-    container.style.display = 'block';
-    if (titleEl) titleEl.textContent = 'Encerrar Disparo';
-
-    // Monta lista sem duplicar e ordena
-    const seen = new Set();
-    const events = [group.first, ...(group.events || [])]
-        .filter(Boolean)
-        .filter(ev => {
-            const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        })
-        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-    if (badgeEl) badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
-
-    listEl.innerHTML = '';
-    if (events.length === 0) {
-        listEl.innerHTML = '<div class="event-history-item">Nenhum evento encontrado para este disparo.</div>';
-        return;
-    }
-
-    events.forEach(ev => {
-        const item = document.createElement('div');
-        item.className = 'event-history-item';
-        const partName = getPartitionName(ev.particao, ev.clientId);
-        const complemento = ev.complemento && ev.complemento !== '-' ? ` • Zona/Usuário ${ev.complemento}` : '';
-
-        item.innerHTML = `
-            <div class="event-history-time">${ev.data} ${ev.hora}</div>
-            <div class="event-history-desc">${ev.descricao}</div>
-            <div class="event-history-meta">
-                ISEP ${ev.local || ev.clientId || 'N/A'} • ${partName} • Código ${ev.codigoEvento}${complemento}
-            </div>
-        `;
-        listEl.appendChild(item);
-    });
+    closeEventUI.open(group, type);
 }
 
 function showTooltip(element, userData) {
