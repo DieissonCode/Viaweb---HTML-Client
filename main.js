@@ -225,6 +225,12 @@ class AuthManager {
         this.submitBtn = document.getElementById('auth-submit-btn');
         this.cancelBtn = document.getElementById('auth-cancel-btn');
 
+        // Guarda defensiva: se a UI não está no DOM, não continua
+        if (!this.overlay || !this.inputUser || !this.inputPass || !this.userLabel) {
+            console.warn('AuthManager: elementos de autenticação não encontrados.');
+            return;
+        }
+
         this.bindEvents();
         this.renderUser();
         this.show(); // força login na carga
@@ -250,7 +256,8 @@ class AuthManager {
     }
 
     show() {
-        if (this.overlay) this.overlay.style.display = 'block';
+        if (!this.overlay || !this.inputUser || !this.inputPass) return;
+        this.overlay.style.display = 'block';
         this.error('');
         this.inputPass.value = '';
         this.inputUser.focus();
@@ -314,7 +321,10 @@ class AuthManager {
 }
 
 const closeEventUI = new CloseEventModal();
-const authManager = new AuthManager();
+let authManager = null;
+document.addEventListener('DOMContentLoaded', () => {
+    authManager = new AuthManager();
+});
 
 function updateSearchIndices(event) {
     if (!eventsByLocal.has(event.local)) eventsByLocal.set(event.local, []);
@@ -340,7 +350,7 @@ function isValidISEP(idISEP) {
 
 (async () => {
     try { units = await window.getUnits(); populateUnitSelect(); }
-    catch (err) { console.error('❌ Erro ao carregar unidades:', err); unitSelect.innerHTML = '<option value=\"\">Erro ao carregar unidades</option>'; }
+    catch (err) { console.error('❌ Erro ao carregar unidades:', err); unitSelect.innerHTML = 'Erro ao carregar unidades'; }
 })();
 
 (async () => {
@@ -401,9 +411,9 @@ function updatePartitions(data) {
         const div = document.createElement('div');
         div.className = 'partition-item';
         div.innerHTML = `
-        <input type="checkbox" id="partition-${p.pos}" value="${p.pos}">
+        
         <label for="partition-${p.pos}">
-            <span class="${cls}">${statusText}</span> 
+            ${statusText} 
             ${name}
         </label>
         `;
@@ -429,7 +439,7 @@ function updateZones(data) {
             const num = String(z.pos).padStart(2,'0');
             const div = document.createElement('div');
             div.className = 'zone-item';
-            div.innerHTML = `<input type="checkbox" id="zone-${z.pos}" value="${z.pos}"><label for="zone-${z.pos}">Sensor <span class="mono-number">${num}</span>: <span class="zone-status ${cls}">${txt}</span></label>`;
+            div.innerHTML = `<label for="zone-${z.pos}">Sensor ${num}: ${txt}</label>`;
             colDiv.appendChild(div);
         }
         zonesColumns.appendChild(colDiv);
@@ -613,7 +623,6 @@ function updateEventList() {
 
         tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
 
-        // Tooltip handlers (restaurado)
         if (userData) {
             let hoverTimer = null;
             tr.addEventListener('mouseenter', () => {
@@ -640,7 +649,7 @@ function updateEventList() {
     if (filtered.length > maxDisplayEvents) {
         const infoRow = eventList.insertRow(0);
         infoRow.className = 'event-info';
-        infoRow.innerHTML = `<td colspan="6" style="text-align: center; padding: 8px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px;">
+        infoRow.innerHTML = `<td>
             Mostrando últimos ${maxDisplayEvents} de ${filtered.length} eventos. Use o filtro para refinar a busca.
         </td>`;
     }
@@ -765,7 +774,6 @@ function handlePartitionsResponse(resp) {
     if (!data || data.length === 0) return;
     if (data[0]?.cmd === 'erro') {
         setUnitStatus('offline', null, currentClientId);
-        //alert(`Central offline ao consultar partições: ${data[0].mensagem || 'Erro'}`);
         return;
     }
     updatePartitions(data);
@@ -776,7 +784,7 @@ function handleZonesResponse(resp) {
     const data = resp?.resposta;
     if (!data || data.length === 0) return;
     if (data[0]?.cmd === 'erro') {
-        setUnitStatus('offline', null, currentClientId); // sem alert
+        setUnitStatus('offline', null, currentClientId);
         return;
     }
     updateZones(data);
@@ -846,10 +854,8 @@ function applyUnitSelection(val) { // Aplica a seleção de unidade (era o corpo
         currentClientId = String(unit.value);
         clientNumber.textContent = unit.local || unit.label;
 
-        // Aplica status do cache imediatamente (se existir)
         applyCachedStatus(String(unit.value).toUpperCase());
 
-        // Se já sabemos que está offline, limpa listas (sem alert)
         const cached = statusCache.get(String(unit.value).toUpperCase());
         if (cached && cached.status === 'offline') {
             clearPartitionsAndZones();
@@ -893,15 +899,13 @@ function parseJsonStream(raw) {
     raw.split(/\u0001+/g).forEach(chunk => {
         const s = chunk.trim();
         if (!s) return;
-        // encontra o primeiro '{' ou '[' para ignorar prefixos binários/lixo
         const idx = s.search(/[{\[]/);
         if (idx === -1) return;
         const candidate = s.slice(idx);
         try {
             out.push(JSON.parse(candidate));
         } catch (e) {
-            // em vez de lançar erro, apenas loga de forma silenciosa
-            //console.warn('[WS] Descarta chunk inválido (parse JSON falhou):', candidate);
+            // silencioso
         }
     });
     return out;
@@ -917,7 +921,6 @@ function connectWebSocket() {
         reconnectAttempts = 0;
         updateStatus(true);
         armButton.disabled = disarmButton.disabled = true;
-        // Busca status de todos os clientes na conexão
         fetchAllClientStatuses();
     };
 
