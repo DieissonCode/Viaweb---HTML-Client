@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const express = require('express');
 const mssql = require('mssql');
 const dbConfig = require('./db-config');
+const logsDbConfig = require('./logs-db-config');
 const { spawn } = require('child_process');
 const { LogsRepository } = require('./logs-repository');
 
@@ -58,8 +59,9 @@ let globalKeyBuffer = null;
 let globalIvSend = null;
 let globalIvRecv = null;
 let tcpIdentSent = false;
-let dbPool = null;
-const logsRepo = new LogsRepository(connectDatabase);
+let dbPool = null;       // ASM
+let logsDbPool = null;   // Logs
+const logsRepo = new LogsRepository(connectLogsDatabase);
 
 // Buffer de recepção para montar blocos completos (múltiplos de 16)
 let tcpRecvBuffer = Buffer.alloc(0);
@@ -102,6 +104,7 @@ function formatHex(buffer, maxBytes = 128) {
     return slice.toString('hex').match(/.{1,2}/g)?.join(' ') || '';
 }
 
+// Pool ASM (unidades/usuários)
 async function connectDatabase() {
     try {
         if (!dbPool) {
@@ -117,10 +120,27 @@ async function connectDatabase() {
     }
 }
 
+// Pool Logs (encerramentos)
+async function connectLogsDatabase() {
+    try {
+        if (!logsDbPool) {
+            logger.info('🔌 Conectando ao banco Logs...');
+            logsDbPool = await new mssql.ConnectionPool(logsDbConfig).connect();
+            logger.info('✅ Banco Logs conectado');
+        }
+        return logsDbPool;
+    } catch (err) {
+        logger.error('❌ Erro ao conectar ao banco Logs: ' + err.message);
+        metrics.recordError();
+        throw err;
+    }
+}
+
 const app = express();
 
 app.use(express.json({ limit: '10kb' }));
 
+// Garante schema LOGS no banco Logs
 (async () => {
     try {
         await logsRepo.ensureSchema();
@@ -511,6 +531,10 @@ process.on('SIGINT', async () => {
     if (dbPool) {
         await dbPool.close();
         logger.info('✅ Banco de dados fechado');
+    }
+    if (logsDbPool) {
+        await logsDbPool.close();
+        logger.info('✅ Banco Logs fechado');
     }
     if (globalTcpClient) {
         globalTcpClient.destroy();

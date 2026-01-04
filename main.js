@@ -1138,11 +1138,39 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 eventsFilter.addEventListener('input', () => updateEventList());
 
-confirmCloseEvent.onclick = () => {
+async function logClosureToServer(group, type, procedureText) {
+    console.log('📝 Registrando encerramento no servidor...');
+    console.log('   Evento:', group?.first || null);
+    try {
+        const payload = {
+            event: group?.first || null,
+            closure: {
+                type,
+                procedureText,
+                user: window.currentUser || null
+            }
+        };
+        console.log('   Payload:', payload);
+        await fetch('/api/logs/close', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    } catch (err) {
+        console.error('❌ Erro ao registrar encerramento:', err);
+    }
+}
+
+confirmCloseEvent.onclick = async () => {
     if (selectedPendingEvent) {
-        const {group, type} = selectedPendingEvent;
-        if (type === 'alarm') activeAlarms.delete(group.first.local);
-        else {
+        const { group, type } = selectedPendingEvent;
+
+        // registra no banco antes de remover da UI
+        await logClosureToServer(group, type, procedureText.value || '');
+
+        if (type === 'alarm') {
+            activeAlarms.delete(group.first.local);
+        } else {
             const key = `${group.first.local}-${group.first.codigoEvento}-${group.first.complemento}`;
             activePendentes.delete(key);
         }

@@ -1,120 +1,98 @@
 ﻿const mssql = require('mssql');
 
+function normalizeText(val) {
+    return (val === null || val === undefined) ? '' : String(val);
+}
+
 class LogsRepository {
     constructor(getPoolFn) {
         this.getPool = getPoolFn;
     }
 
-    async ensureSchema() {
+    async saveEventIfNeeded(event) {
+        if (!event) return null;
         const pool = await this.getPool();
-        await pool.request().batch(`
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'LOGS')
-            BEGIN
-                PRINT('Criando schema LOGS');
-                EXEC('CREATE SCHEMA LOGS');
-            END
 
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[LOGS].[Events]') AND type = N'U')
-            BEGIN
-                PRINT('Criando LOGS.Events');
-                CREATE TABLE [LOGS].[Events](
-                    [Id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-                    [EventId] NVARCHAR(100) NULL,
-                    [ISEP] NVARCHAR(16) NOT NULL,
-                    [Codigo] NVARCHAR(16) NOT NULL,
-                    [Complemento] NVARCHAR(64) NULL,
-                    [Particao] NVARCHAR(32) NULL,
-                    [Descricao] NVARCHAR(512) NULL,
-                    [DataEvento] DATETIME2 NULL,
-                    [CreatedAt] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
-                );
-                CREATE INDEX IX_Events_EventId ON [LOGS].[Events]([EventId]);
-            END
-
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[LOGS].[Closures]') AND type = N'U')
-            BEGIN
-                PRINT('Criando LOGS.Closures');
-                CREATE TABLE [LOGS].[Closures](
-                    [Id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-                    [EventId] NVARCHAR(100) NULL,
-                    [ISEP] NVARCHAR(16) NOT NULL,
-                    [Codigo] NVARCHAR(16) NOT NULL,
-                    [Complemento] NVARCHAR(64) NULL,
-                    [Particao] NVARCHAR(32) NULL,
-                    [Descricao] NVARCHAR(512) NULL,
-                    [DataEvento] DATETIME2 NULL,
-                    [Tipo] NVARCHAR(32) NOT NULL,
-                    [Procedimento] NVARCHAR(MAX) NULL,
-                    [ClosedBy] NVARCHAR(128) NULL,
-                    [ClosedByDisplay] NVARCHAR(256) NULL,
-                    [ClosedAt] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
-                );
-                CREATE INDEX IX_Closures_EventId ON [LOGS].[Closures]([EventId]);
-                CREATE INDEX IX_Closures_ISEP ON [LOGS].[Closures]([ISEP], [Codigo]);
-            END
-
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[LOGS].[ClosureEdits]') AND type = N'U')
-            BEGIN
-                PRINT('Criando LOGS.ClosureEdits');
-                CREATE TABLE [LOGS].[ClosureEdits](
-                    [Id] BIGINT IDENTITY(1,1) PRIMARY KEY,
-                    [ClosureId] BIGINT NOT NULL,
-                    [EditedBy] NVARCHAR(128) NULL,
-                    [EditedByDisplay] NVARCHAR(256) NULL,
-                    [EditedAt] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-                    [PreviousText] NVARCHAR(MAX) NULL,
-                    [NewText] NVARCHAR(MAX) NULL,
-                    CONSTRAINT FK_ClosureEdits_Closures FOREIGN KEY (ClosureId) REFERENCES [LOGS].[Closures]([Id])
-                );
-            END
-        `);
-    }
-
-    async saveEventIfNeeded(ev) {
-        if (!ev) return null;
-        const pool = await this.getPool();
-        const insert = `
-            INSERT INTO [LOGS].[Events] (EventId, ISEP, Codigo, Complemento, Particao, Descricao, DataEvento)
-            SELECT @EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, @DataEvento
-            WHERE NOT EXISTS (
-                SELECT 1 FROM [LOGS].[Events] WHERE EventId = @EventId AND @EventId IS NOT NULL
-            );
-        `;
-        await pool.request()
-            .input('EventId', mssql.NVarChar(100), ev.id || null)
-            .input('ISEP', mssql.NVarChar(16), ev.local || ev.clientId || '')
-            .input('Codigo', mssql.NVarChar(16), ev.codigoEvento || '')
-            .input('Complemento', mssql.NVarChar(64), ev.complemento || null)
-            .input('Particao', mssql.NVarChar(32), ev.particao ? String(ev.particao) : null)
-            .input('Descricao', mssql.NVarChar(512), ev.descricao || null)
-            .input('DataEvento', mssql.DateTime2, ev.timestamp ? new Date(ev.timestamp) : null)
-            .query(insert);
-    }
-
-    async saveClosure(ev, closure) {
-        const pool = await this.getPool();
-        await pool.request()
-            .input('EventId', mssql.NVarChar(100), ev?.id || null)
-            .input('ISEP', mssql.NVarChar(16), ev?.local || ev?.clientId || '')
-            .input('Codigo', mssql.NVarChar(16), ev?.codigoEvento || '')
-            .input('Complemento', mssql.NVarChar(64), ev?.complemento || null)
-            .input('Particao', mssql.NVarChar(32), ev?.particao ? String(ev.particao) : null)
-            .input('Descricao', mssql.NVarChar(512), ev?.descricao || null)
-            .input('DataEvento', mssql.DateTime2, ev?.timestamp ? new Date(ev.timestamp) : null)
-            .input('Tipo', mssql.NVarChar(32), closure?.type || 'desconhecido')
-            .input('Procedimento', mssql.NVarChar(mssql.MAX), closure?.procedureText || null)
-            .input('ClosedBy', mssql.NVarChar(128), closure?.user?.username || null)
-            .input('ClosedByDisplay', mssql.NVarChar(256), closure?.user?.displayName || null)
+        const result = await pool.request()
+            .input('CodigoEvento', mssql.NVarChar(50), normalizeText(event.codigoEvento))
+            .input('Complemento', mssql.NVarChar(100), normalizeText(event.complemento))
+            .input('Particao', mssql.NVarChar(50), normalizeText(event.particao))
+            .input('Local', mssql.NVarChar(100), normalizeText(event.local || event.clientId))
+            .input('RawEvent', mssql.NVarChar(mssql.MAX), JSON.stringify(event))
             .query(`
-                INSERT INTO [LOGS].[Closures]
-                (EventId, ISEP, Codigo, Complemento, Particao, Descricao, DataEvento, Tipo, Procedimento, ClosedBy, ClosedByDisplay)
-                VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, @DataEvento, @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
+                INSERT INTO LOGS.Events (CodigoEvento, Complemento, Particao, Local, RawEvent)
+                OUTPUT INSERTED.Id
+                VALUES (@CodigoEvento, @Complemento, @Particao, @Local, @RawEvent);
             `);
+
+        return result.recordset[0].Id;
     }
 
-    async saveEventAndClosure(ev, closure) {
-        await this.saveEventIfNeeded(ev);
-        await this.saveClosure(ev, closure);
+    async saveClosure(eventId, closure) {
+        const pool = await this.getPool();
+
+        const result = await pool.request()
+            .input('EventId', mssql.Int, eventId)
+            .input('Type', mssql.NVarChar(50), normalizeText(closure.type))
+            .input('ProcedureText', mssql.NVarChar(mssql.MAX), normalizeText(closure.procedureText))
+            .input('UserName', mssql.NVarChar(200), normalizeText(closure.user?.displayName || closure.user?.username))
+            .query(`
+                INSERT INTO LOGS.Closures (EventId, Type, ProcedureText, UserName)
+                OUTPUT INSERTED.Id
+                VALUES (@EventId, @Type, @ProcedureText, @UserName);
+            `);
+
+        return result.recordset[0].Id;
+    }
+
+    async saveEventAndClosure(event, closure) {
+        const pool = await this.getPool();
+        const tx = new mssql.Transaction(pool);
+        await tx.begin();
+
+        try {
+            const request = new mssql.Request(tx);
+
+            const codigoEvento = normalizeText(event?.codigoEvento);
+            const complemento = normalizeText(event?.complemento);
+            const particao = normalizeText(event?.particao);
+            const local = normalizeText(event?.local || event?.clientId);
+            const rawEvent = JSON.stringify(event || {});
+            const type = normalizeText(closure?.type);
+            const procedureText = normalizeText(closure?.procedureText);
+            const userName = normalizeText(closure?.user?.displayName || closure?.user?.username);
+
+            const evResult = await request
+                .input('CodigoEvento', mssql.NVarChar(50), codigoEvento)
+                .input('Complemento', mssql.NVarChar(100), complemento)
+                .input('Particao', mssql.NVarChar(50), particao)
+                .input('Local', mssql.NVarChar(100), local)
+                .input('RawEvent', mssql.NVarChar(mssql.MAX), rawEvent)
+                .query(`
+                    INSERT INTO LOGS.Events (CodigoEvento, Complemento, Particao, Local, RawEvent)
+                    OUTPUT INSERTED.Id
+                    VALUES (@CodigoEvento, @Complemento, @Particao, @Local, @RawEvent);
+                `);
+
+            const eventId = evResult.recordset[0].Id;
+
+            const clResult = await request
+                .input('EventId', mssql.Int, eventId)
+                .input('Type', mssql.NVarChar(50), type)
+                .input('ProcedureText', mssql.NVarChar(mssql.MAX), procedureText)
+                .input('UserName', mssql.NVarChar(200), userName)
+                .query(`
+                    INSERT INTO LOGS.Closures (EventId, Type, ProcedureText, UserName)
+                    OUTPUT INSERTED.Id
+                    VALUES (@EventId, @Type, @ProcedureText, @UserName);
+                `);
+
+            await tx.commit();
+            return { eventId, closureId: clResult.recordset[0].Id };
+        } catch (err) {
+            await tx.rollback();
+            throw err;
+        }
     }
 }
 
