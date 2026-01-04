@@ -37,7 +37,21 @@ if (!clientStatusEl && clientNumber?.parentElement) {
     clientNumber.parentElement.appendChild(clientStatusEl);
 }
 
+// Bootstrap de usuário salvo antes de criar AuthManager
 let currentUser = null;
+(function bootstrapCurrentUserFromState() {
+    try {
+        const saved = sessionStorage.getItem('viawebState');
+        if (!saved) return;
+        const state = JSON.parse(saved);
+        if (state && state.currentUser) {
+            currentUser = state.currentUser;
+            window.currentUser = currentUser;
+        }
+    } catch (e) {
+        console.warn('Auth bootstrap falhou:', e.message);
+    }
+})();
 
 let unitStatus = null;
 let unitStatusSince = null;
@@ -335,6 +349,7 @@ const closeEventUI = new CloseEventModal();
 let authManager = null;
 document.addEventListener('DOMContentLoaded', () => {
     authManager = new AuthManager();
+    window.authManager = authManager; // expõe para hot-reload
 });
 
 function updateSearchIndices(event) {
@@ -637,7 +652,6 @@ function updateEventList() {
         const tipos = { 0: '[Horário Programado]',1: '[Monitoramento]', 2: '[Facilitador]', 3: '[Senha de Uso Único]', 4: '[Senha de Uso Único]', 5: '[Senha de Uso Único]', 6: '[TI - Manutenção]' };
         let complemento = ev.complemento;
         let userData = null;
-        console.log(isArmDisarmCode && ev.complemento && ev.complemento !== '-' + ' | ' + ev.descricao);
         if (isArmDisarmCode && ev.complemento && ev.complemento !== '-') {
             const zonaUsuario = Number(ev.complemento);
             const isep = String(ev.local || ev.clientId);
@@ -645,7 +659,6 @@ function updateEventList() {
             else desc += `Usuário Não Cadastrado | ${ev.complemento}`;
             const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === zonaUsuario) || null;
-            console.log('Busca usuário para ISEP ' + isep + ' e ID_USUARIO ' + zonaUsuario + ':', userData + ' | ' + ev.descricao + ' | ' + desc);
             if (userData && !tipos[zonaUsuario]) desc = ev.descricao + window.UsersDB.formatUserName(userData);
         }
 
