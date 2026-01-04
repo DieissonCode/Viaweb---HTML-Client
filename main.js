@@ -450,7 +450,9 @@ function updateEventList() {
 function openCloseModal(group, type) {
     selectedPendingEvent = { group, type };
     closeEventModal.style.display = 'block';
-    renderEventHistory(group, type); // só mostrará se for 'alarm'
+    const modalContent = closeEventModal.querySelector('.modal-content');
+    if (modalContent) modalContent.scrollTop = 0;
+    renderEventHistory(group, type); // mostra apenas em 'alarm'
     procedureText.focus();
 }
 
@@ -458,20 +460,22 @@ function renderEventHistory(group, type) {
     const container = document.getElementById('event-history');
     const listEl = document.getElementById('event-history-list');
     const titleEl = document.getElementById('closeEventTitle');
+    const badgeEl = document.getElementById('history-badge');
     if (!container || !listEl) return;
 
-    // Só mostra na aba Disparos (type === 'alarm')
+    // Apenas disparos
     if (type !== 'alarm') {
         container.style.display = 'none';
         listEl.innerHTML = '';
         if (titleEl) titleEl.textContent = 'Encerrar Evento';
+        if (badgeEl) badgeEl.textContent = '0 eventos';
         return;
     }
 
     container.style.display = 'block';
     if (titleEl) titleEl.textContent = 'Encerrar Disparo';
 
-    // Monta lista sem duplicar o primeiro evento
+    // Monta lista sem duplicar e ordena
     const seen = new Set();
     const events = [group.first, ...(group.events || [])]
         .filter(Boolean)
@@ -482,6 +486,8 @@ function renderEventHistory(group, type) {
             return true;
         })
         .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    if (badgeEl) badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
 
     listEl.innerHTML = '';
     if (events.length === 0) {
