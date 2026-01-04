@@ -254,6 +254,28 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+app.post('/api/logs/event', async (req, res) => {
+    const event = req.body || {};
+    const codigo = event?.codigoEvento || event?.codigo || event?.code;
+    const isep = event?.isep || event?.local || event?.clientId;
+
+    if (!codigo || !isep) {
+        return res.status(400).json({
+            success: false,
+            error: 'Dados obrigatórios ausentes: codigoEvento/codigo e isep/local/clientId são obrigatórios'
+        });
+    }
+
+    try {
+        const eventId = await logsRepo.saveIncomingEvent(event);
+        return res.json({ success: true, eventId });
+    } catch (e) {
+        logger.error('❌ API /api/logs/event: ' + e.message);
+        metrics.recordError();
+        return res.status(500).json({ success: false, error: 'Falha ao salvar evento' });
+    }
+});
+
 app.post('/api/logs/close', async (req, res) => {
     const { event, closure } = req.body || {};
     const codigo = event?.codigoEvento || event?.codigo || event?.code;

@@ -613,8 +613,10 @@ function processEvent(data) {
         extraClass
     };
 
+
     allEvents.push(ev);
     updateSearchIndices(ev);
+
     if (allEvents.length > maxEvents) {
         const removed = allEvents.shift();
         const localEvents = eventsByLocal.get(removed.local);
@@ -653,6 +655,13 @@ function processEvent(data) {
     }
 
     updateEventList();
+
+    fetch('/api/logs/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ev)
+    }).catch(() => {});
+
     updateCounts();
 }
 
@@ -737,6 +746,7 @@ function updateEventList() {
             const usersByIsep = window.UsersDB.getUsersByIsep(isep) || [];
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === zonaUsuario) || null;
             if (userData && !tipos[zonaUsuario]) desc = ev.descricao + window.UsersDB.formatUserName(userData);
+            ev.descricao = desc;
         }
 
         tr.innerHTML = `<td>${ev.local||'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
