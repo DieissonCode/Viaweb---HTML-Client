@@ -448,14 +448,14 @@ function updateZones(data) {
         const end = Math.min(start + perCol, data.length);
         for (let i = start; i < end; i++) {
             const z = data[i];
-            const txt = z.inibida ? "Inibida"
-                : z.excluida ? "Excluída"
-                : z.aberta ? "Aberta"
+            const txt = z.inibida ? "Inibido"
+                : z.excluida ? "Excluído"
+                : z.aberta ? "Aberto"
                 : z.tamper ? "Tamper"
-                : z.disparada ? "Disparada"
+                : z.disparada ? "Disparado"
                 : "OK";
-            const cls = z.inibida ? "inibida"
-                : z.excluida ? "excluida"
+            const cls = z.inibida ? "inibido"
+                : z.excluida ? "excluido"
                 : (z.aberta || z.disparada) ? "aberto"
                 : z.tamper ? "tamper"
                 : "ok";

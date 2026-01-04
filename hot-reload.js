@@ -61,7 +61,7 @@ class HotReload {
                 selectedEvent: window.selectedEvent || null,
                 selectedUnit: document.getElementById('unit-select')?.value || null,
                 autoUpdate: document.getElementById('auto-update')?.checked || false,
-                currentUser: window.currentUser || null          // <-- novo
+                currentUser: window.currentUser || null
             };
             
             sessionStorage.setItem('viawebState', JSON.stringify(state));
@@ -74,20 +74,18 @@ class HotReload {
     restoreState() {
         try {
             const saved = sessionStorage.getItem('viawebState');
-
             if (!saved) return false;
 
+            const state = JSON.parse(saved);
+
+            // Aplica usuário logado primeiro
             if (state.currentUser) {
                 window.currentUser = state.currentUser;
-                // Se o AuthManager já existe, atualiza UI e fecha modal
                 if (window.authManager) {
                     window.authManager.renderUser?.();
                     window.authManager.hide?.();
                 }
             }
-
-            
-            const state = JSON.parse(saved);
             
             // Restaura variáveis globais - REPLACE instead of append to avoid duplication
             if (window.allEvents && state.allEvents) {
