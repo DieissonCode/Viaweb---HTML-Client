@@ -511,13 +511,12 @@ function updatePartitions(data) {
         const div = document.createElement('div');
         div.className = 'partition-item';
         div.innerHTML = `
-        
-        ${statusText}
-        <label for="partition-${p.pos}">
-            ${name}
-        </label>
+            <input type="checkbox" id="partition-${p.pos}" value="${p.pos}">
+            <span class="partition-status ${statusCls}">${statusText}</span>
+            <label for="partition-${p.pos}">${name}</label>
         `;
         partitionsList.appendChild(div);
+
         if (savedPartitions.includes(p.pos)) {
             const cb = document.getElementById(`partition-${p.pos}`);
             if (cb) cb.checked = true;
@@ -529,12 +528,15 @@ function updateZones(data) {
     savedZones = getSelectedZones();
     totalZones.textContent = data.length;
     zonesColumns.innerHTML = '';
+
     const perCol = 8;
     const cols = Math.ceil(data.length / perCol);
+
     for (let c = 0; c < cols; c++) {
         const colDiv = document.createElement('div');
         const start = c * perCol;
         const end = Math.min(start + perCol, data.length);
+
         for (let i = start; i < end; i++) {
             const z = data[i];
             const txt = z.inibida ? "Inibido"
@@ -548,19 +550,20 @@ function updateZones(data) {
                 : (z.aberta || z.disparada) ? "aberto"
                 : z.tamper ? "tamper"
                 : "ok";
-            const num = String(z.pos).padStart(2,'0');
+            const num = String(z.pos).padStart(2, '0');
 
             const div = document.createElement('div');
             div.className = 'zone-item';
             div.innerHTML = `
-                
-                ${txt}
+                <input type="checkbox" id="zone-${z.pos}" value="${z.pos}">
+                <span class="zone-status ${cls}">${txt}</span>
                 <label for="zone-${z.pos}">Sensor ${num}: ${txt}</label>
             `;
             colDiv.appendChild(div);
         }
         zonesColumns.appendChild(colDiv);
     }
+
     savedZones.forEach(zoneNum => {
         const checkbox = document.getElementById(`zone-${zoneNum}`);
         if (checkbox) checkbox.checked = true;
