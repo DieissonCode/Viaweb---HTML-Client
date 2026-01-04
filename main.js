@@ -74,14 +74,12 @@ function updateClientStatus() {
     }
 }
 
-// Limpar partições/zonas
 function clearPartitionsAndZones() {
     partitionsList.innerHTML = '';
     zonesColumns.innerHTML = '';
     totalZones.textContent = '0';
 }
 
-// Se houver status no cache para o ISEP selecionado, aplica
 function applyCachedStatus(isep) {
     const cached = statusCache.get(isep);
     if (!cached) return;
@@ -113,11 +111,9 @@ let commandIdCounter = 0;
 const COMMAND_ID_MOD = 1000;
 const WS_BUFFER_LIMIT = 1024 * 1024;
 
-// Tooltip state
 let tooltipTimer = null;
 let currentTooltip = null;
 
-// Performance indices
 let eventsByLocal = new Map();
 let eventsByCode = new Map();
 
@@ -143,19 +139,16 @@ function isValidISEP(idISEP) {
     return /^[0-9A-F]{4}$/.test(formatted);
 }
 
-// Carregar unidades
 (async () => {
     try { units = await window.getUnits(); populateUnitSelect(); }
     catch (err) { console.error('❌ Erro ao carregar unidades:', err); unitSelect.innerHTML = '<option value=\"\">Erro ao carregar unidades</option>'; }
 })();
 
-// Carregar usuários
 (async () => {
     try { users = await window.UsersDB.getUsers(); }
     catch (err) { console.error('❌ Erro ao carregar usuários:', err); }
 })();
 
-// THEME TOGGLE
 const themeToggle = document.getElementById('theme-toggle');
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme === 'light') { document.body.classList.add('light-mode'); themeToggle.textContent = '🌙'; }
@@ -166,7 +159,6 @@ themeToggle.addEventListener('click', () => {
     else { themeToggle.textContent = '☀️'; localStorage.setItem('theme', 'dark'); }
 });
 
-// Toggles
 function setupToggle(headerId, contentId) {
     const header = document.getElementById(headerId);
     const content = document.getElementById(contentId);
@@ -177,6 +169,7 @@ function setupToggle(headerId, contentId) {
         });
     }
 }
+
 document.addEventListener('DOMContentLoaded', () => {
     setupToggle('control-header', 'control-content');
     setupToggle('events-header', 'events-content');
@@ -460,7 +453,6 @@ function openCloseModal(group, type) {
     procedureText.focus();
 }
 
-// Tooltip (restaurado)
 function showTooltip(element, userData) {
     hideTooltip();
     const tooltip = document.createElement('div');
@@ -480,7 +472,6 @@ function hideTooltip() {
     currentTooltip = null;
 }
 
-// Seleção de cliente a partir do evento (restaurado)
 function selectClientFromEvent(ev) {
     const isep = ev.local || ev.clientId;
     if (!isep) return;
@@ -554,7 +545,6 @@ function fetchPartitionsAndZones(idISEP) {
     sendCommand(cmd2);
 }
 
-// Busca status de TODOS os clientes ao conectar
 function fetchAllClientStatuses() {
     const cmdId = generateCommandId();
     pendingCommands.set(cmdId, resp => handleListarClientesAllResponse(resp));
@@ -562,7 +552,6 @@ function fetchAllClientStatuses() {
     sendCommand(cmd);
 }
 
-// Busca status de um cliente específico (para refresh pontual)
 function fetchClientStatus(idISEP) {
     if (!isValidISEP(idISEP)) { console.error('❌ ISEP inválido para listarClientes:', idISEP); return; }
     const isepFormatted = String(idISEP).padStart(4, '0').toUpperCase();
@@ -597,7 +586,6 @@ function handleZonesResponse(resp) {
     setUnitStatus('online', null, currentClientId);
 }
 
-// Aplica status (online/offline + since) em cache e, se selecionado, no UI
 function applyStatusFromViaweb(viawebArr) {
     viawebArr.forEach(vw => {
         (vw.cliente || []).forEach(cli => {
@@ -654,7 +642,6 @@ function updateStatus(connected) {
     document.getElementById('status-text').textContent = 'Viaweb - Cotrijal';
 }
 
-// Suporta múltiplos JSON concatenados (SOH \u0001)
 function parseJsonStream(raw) {
     if (typeof raw !== 'string') return [];
     const out = [];
@@ -729,7 +716,6 @@ function connectWebSocket() {
     ws.onerror = (e) => console.error('[WS] Erro WS:', e);
 }
 
-// Troca de unidade
 unitSelect.addEventListener('change', () => {
     const val = unitSelect.value;
     const unit = units.find(u => String(u.value) === String(val));
@@ -779,7 +765,6 @@ unitSelect.addEventListener('change', () => {
     }
 });
 
-// Busca por unidade (filtro)
 unitSearch.addEventListener('input', e => {
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
@@ -795,11 +780,9 @@ unitSearch.addEventListener('input', e => {
     }, 300);
 });
 
-// Botões armar/desarmar
 armButton.addEventListener('click', () => selectedEvent && getSelectedPartitions().length ? armarParticoes(selectedEvent.idISEP, getSelectedPartitions(), getSelectedZones()) : alert('Selecione partição'));
 disarmButton.addEventListener('click', () => selectedEvent && getSelectedPartitions().length ? desarmarParticoes(selectedEvent.idISEP, getSelectedPartitions()) : alert('Selecione partição'));
 
-// Auto update
 autoUpdateCheckbox.addEventListener('change', () => {
     if (autoUpdateCheckbox.checked && selectedEvent) {
         updateInterval = setInterval(() => {
@@ -809,7 +792,6 @@ autoUpdateCheckbox.addEventListener('change', () => {
     } else clearInterval(updateInterval);
 });
 
-// Tabs e filtro
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -819,7 +801,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 eventsFilter.addEventListener('input', () => updateEventList());
 
-// Modal close
 confirmCloseEvent.onclick = () => {
     if (selectedPendingEvent) {
         const {group, type} = selectedPendingEvent;
@@ -835,19 +816,20 @@ confirmCloseEvent.onclick = () => {
         selectedPendingEvent = null;
     }
 };
+
 cancelCloseEvent.onclick = () => {
     closeEventModal.style.display = 'none';
     procedureText.value = '';
     selectedPendingEvent = null;
 };
 
-// Toggles marcar/desmarcar todos
 togglePartitionsBtn.addEventListener('click', () => {
     const checkboxes = document.querySelectorAll('#partitions-list input[type="checkbox"]');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
     if (allChecked) { checkboxes.forEach(cb => cb.checked = false); togglePartitionsBtn.innerHTML = '☑️ Todas'; }
     else { checkboxes.forEach(cb => cb.checked = true); togglePartitionsBtn.innerHTML = '☐ Nenhuma'; }
 });
+
 toggleZonesBtn.addEventListener('click', () => {
     const checkboxes = document.querySelectorAll('#zones-columns input[type="checkbox"]');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
@@ -855,7 +837,6 @@ toggleZonesBtn.addEventListener('click', () => {
     else { checkboxes.forEach(cb => cb.checked = true); toggleZonesBtn.innerHTML = '☐ Nenhuma'; }
 });
 
-// Armar/Desarmar todas
 armAllButton.addEventListener('click', () => {
     if (!selectedEvent) { alert('Selecione uma unidade primeiro'); return; }
     document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
@@ -866,6 +847,7 @@ armAllButton.addEventListener('click', () => {
         armarParticoes(selectedEvent.idISEP, partitions, zones);
     }
 });
+
 disarmAllButton.addEventListener('click', () => {
     if (!selectedEvent) { alert('Selecione uma unidade primeiro'); return; }
     document.querySelectorAll('#partitions-list input[type="checkbox"]').forEach(cb => cb.checked = true);
@@ -878,7 +860,6 @@ disarmAllButton.addEventListener('click', () => {
 
 connectWebSocket();
 
-// SERVICE WORKER
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
