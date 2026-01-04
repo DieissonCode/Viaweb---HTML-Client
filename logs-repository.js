@@ -10,10 +10,9 @@ function toDateGmt3(rawTs) {
 }
 
 // Formata Date em string SQL-safe (yyyy-MM-dd HH:mm:ss.SSS)
-// Formata Date em string SQL-safe usando UTC (para evitar double-offset)
 function formatDateTimeSql(dateObj) {
     const pad = (n, w = 2) => String(n).padStart(w, '0');
-    const y = dateObj.getFullYear();      // ← LOCAL, não UTC
+    const y = dateObj.getFullYear();
     const m = pad(dateObj.getMonth() + 1);
     const d = pad(dateObj.getDate());
     const hh = pad(dateObj.getHours());
@@ -23,12 +22,14 @@ function formatDateTimeSql(dateObj) {
     return `${y}-${m}-${d} ${hh}:${mi}:${ss}.${ms}`;
 }
 
+// Log helper simples
 function logDebug(step, payload) {
-    //console.log(`[logs-repo] ${step}:`, payload);
+    console.log(`[logs-repo] ${step}:`, payload);
 }
 
+// Loga a query + params normalizados
 function logQuery(step, sql, params) {
-    //console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
+    console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
 }
 
 class LogsRepository {
@@ -36,7 +37,7 @@ class LogsRepository {
         this.getPool = getPoolFn;
     }
 
-    // Novo: salva evento na chegada (sem closure)
+    // Salva evento na chegada (sem closure)
     async saveIncomingEvent(event) {
         if (!event) return null;
         const pool = await this.getPool();
@@ -49,15 +50,14 @@ class LogsRepository {
         const dataEventoDate = event.timestamp ? toDateGmt3(event.timestamp) : new Date();
         const dataEventoStr = formatDateTimeSql(dataEventoDate);
         const rawEvent = JSON.stringify(event || {});
-        logDebug('saveIncomingEvent - normalized inputs', { codigo, complemento, particao, local, isep, descricao, dataEventoStr });
 
         const sql = `
             INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, RawEvent)
             OUTPUT INSERTED.Id
-            VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, @DataEventoStr, @RawEvent);
+            VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @RawEvent);
         `;
         const params = { Codigo: codigo, CodigoEvento: codigo, Complemento: complemento, Particao: particao, Local: local, ISEP: isep, Descricao: descricao, DataEventoStr: dataEventoStr, RawEvent: event };
-        //logQuery('event(incoming)', sql, params);
+        logQuery('event(incoming)', sql, params);
 
         const result = await pool.request()
             .input('Codigo', mssql.NVarChar(50), codigo)
@@ -72,7 +72,7 @@ class LogsRepository {
             .query(sql);
 
         const eventId = result.recordset[0].Id;
-        //logDebug('saveIncomingEvent - inserted', { eventId });
+        logDebug('saveIncomingEvent - inserted', { eventId });
         return eventId;
     }
 
@@ -96,7 +96,7 @@ class LogsRepository {
             ORDER BY DataHora DESC;
         `;
         const params = { Codigo: codigo, ISEP: isep, Complemento: complemento, Particao: particao, DataEventoStr: dataEventoStr };
-        //logQuery('findEventId', sql, params);
+        logQuery('findEventId', sql, params);
 
         const request = pool.request()
             .input('Codigo', mssql.NVarChar(50), codigo)
@@ -124,12 +124,12 @@ class LogsRepository {
             ClosedBy: normalizeText(closure.user?.username),
             ClosedByDisplay: normalizeText(closure.user?.displayName)
         };
-        //logDebug('saveClosure - input', payload);
+        logDebug('saveClosure - input', payload);
 
         const sql = `
             INSERT INTO LOGS.Closures (EventId, ISEP, Codigo, Complemento, Particao, Descricao, DataEvento, Tipo, Procedimento, ClosedBy, ClosedByDisplay)
             OUTPUT INSERTED.Id
-            VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, @DataEventoStr, @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
+            VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
         `;
         logQuery('closure', sql, payload);
 
@@ -148,7 +148,7 @@ class LogsRepository {
             .query(sql);
 
         const insertedId = result.recordset[0].Id;
-        //logDebug('saveClosure - inserted', { closureId: insertedId });
+        logDebug('saveClosure - inserted', { closureId: insertedId });
         return insertedId;
     }
 
@@ -171,9 +171,9 @@ class LogsRepository {
             const dataEventoDate = event?.timestamp ? toDateGmt3(event.timestamp) : new Date();
             const dataEventoStr = formatDateTimeSql(dataEventoDate);
 
-            //logDebug('saveEventAndClosure - normalized inputs', {
-            //    codigo, complemento, particao, local, isep, type, procedureText, userName, descricao, dataEventoStr
-            //});
+            logDebug('saveEventAndClosure - normalized inputs', {
+                codigo, complemento, particao, local, isep, type, procedureText, userName, descricao, dataEventoStr
+            });
 
             // Tentar reaproveitar EventId já existente
             let eventId = await this.findEventId(event);
@@ -185,17 +185,17 @@ class LogsRepository {
                     OUTPUT INSERTED.Id
                     VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @RawEvent);
                 `;
-                //logQuery('event(tx)', sqlEvent, {
-                //    Codigo: codigo,
-                //    CodigoEvento: codigo,
-                //    Complemento: complemento,
-                //    Particao: particao,
-                //    Local: local,
-                //    ISEP: isep,
-                //    Descricao: descricao,
-                //    DataEventoStr: dataEventoStr,
-                //    RawEvent: event
-                //});
+                logQuery('event(tx)', sqlEvent, {
+                    Codigo: codigo,
+                    CodigoEvento: codigo,
+                    Complemento: complemento,
+                    Particao: particao,
+                    Local: local,
+                    ISEP: isep,
+                    Descricao: descricao,
+                    DataEventoStr: dataEventoStr,
+                    RawEvent: event
+                });
 
                 const reqEvent = new mssql.Request(tx);
                 const evResult = await reqEvent
@@ -211,30 +211,30 @@ class LogsRepository {
                     .query(sqlEvent);
 
                 eventId = evResult.recordset[0].Id;
-                //logDebug('saveEventAndClosure - event inserted', { eventId });
+                logDebug('saveEventAndClosure - event inserted', { eventId });
             } else {
-                //logDebug('saveEventAndClosure - reused existing eventId', { eventId });
+                logDebug('saveEventAndClosure - reused existing eventId', { eventId });
             }
 
             // Closure
             const sqlClosure = `
                 INSERT INTO LOGS.Closures (EventId, ISEP, Codigo, Complemento, Particao, Descricao, DataEvento, Tipo, Procedimento, ClosedBy, ClosedByDisplay)
                 OUTPUT INSERTED.Id
-                VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, @DataEventoStr, @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
+                VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
             `;
-            //logQuery('closure(tx)', sqlClosure, {
-            //    EventId: eventId,
-            //    ISEP: isep,
-            //    Codigo: codigo,
-            //    Complemento: complemento,
-            //    Particao: particao,
-            //    Descricao: descricao,
-            //    DataEventoStr: dataEventoStr,
-            //    Tipo: type,
-            //    Procedimento: procedureText,
-            //    ClosedBy: closure?.user?.username,
-            //    ClosedByDisplay: closure?.user?.displayName
-            //});
+            logQuery('closure(tx)', sqlClosure, {
+                EventId: eventId,
+                ISEP: isep,
+                Codigo: codigo,
+                Complemento: complemento,
+                Particao: particao,
+                Descricao: descricao,
+                DataEventoStr: dataEventoStr,
+                Tipo: type,
+                Procedimento: procedureText,
+                ClosedBy: closure?.user?.username,
+                ClosedByDisplay: closure?.user?.displayName
+            });
 
             const reqClosure = new mssql.Request(tx);
             const clResult = await reqClosure
@@ -252,14 +252,39 @@ class LogsRepository {
                 .query(sqlClosure);
 
             const closureId = clResult.recordset[0].Id;
-            //logDebug('saveEventAndClosure - closure inserted', { closureId });
+            logDebug('saveEventAndClosure - closure inserted', { closureId });
+
+            // Marca o evento principal com o encerramento
+            await new mssql.Request(tx)
+                .input('EventId', mssql.Int, eventId)
+                .input('ClosureId', mssql.Int, closureId)
+                .query(`UPDATE LOGS.Events SET ClosureId = @ClosureId WHERE Id = @EventId;`);
+
+            // Marca TODOS os eventos associados (mesmo ISEP/Codigo/Complemento/Particao e janela de ±60s)
+            await new mssql.Request(tx)
+                .input('ClosureId', mssql.Int, closureId)
+                .input('ISEP', mssql.NVarChar(10), isep)
+                .input('Codigo', mssql.NVarChar(50), codigo)
+                .input('Complemento', mssql.NVarChar(100), complemento)
+                .input('Particao', mssql.NVarChar(50), particao)
+                .input('DataEventoStr', mssql.NVarChar(30), dataEventoStr)
+                .query(`
+                    UPDATE LOGS.Events
+                    SET ClosureId = @ClosureId
+                    WHERE ClosureId IS NULL
+                      AND ISEP = @ISEP
+                      AND Codigo = @Codigo
+                      AND Complemento = @Complemento
+                      AND Particao = @Particao
+                      AND ABS(DATEDIFF(SECOND, DataEvento, CONVERT(datetime2, @DataEventoStr, 120))) <= 60;
+                `);
 
             await tx.commit();
-            //logDebug('saveEventAndClosure - committed', { eventId, closureId });
+            logDebug('saveEventAndClosure - committed', { eventId, closureId });
             return { eventId, closureId };
         } catch (err) {
             await tx.rollback();
-            //logDebug('saveEventAndClosure - rolled back', { error: err.message });
+            logDebug('saveEventAndClosure - rolled back', { error: err.message });
             throw err;
         }
     }
