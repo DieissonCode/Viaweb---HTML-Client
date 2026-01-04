@@ -405,20 +405,23 @@ function updatePartitions(data) {
     savedPartitions = getSelectedPartitions();
     partitionsList.innerHTML = '';
     data.forEach(p => {
-        const cls = p.armado == 1 ? 'partition-status armado' : 'partition-status desarmado';
-        const name = getPartitionName(p.pos, currentClientId);
         const statusText = p.armado == 1 ? 'Armada' : 'Desarmada';
+        const statusCls = p.armado == 1 ? 'armado' : 'desarmado';
+        const name = getPartitionName(p.pos, currentClientId);
+
         const div = document.createElement('div');
         div.className = 'partition-item';
         div.innerHTML = `
-        
-        <label for="partition-${p.pos}">
-            ${statusText} 
-            ${name}
-        </label>
+            <input type="checkbox" id="partition-${p.pos}" value="${p.pos}">
+            <span class="partition-status ${statusCls}">${statusText}</span>
+            <label for="partition-${p.pos}">
+                ${name}
+            </label>
         `;
         partitionsList.appendChild(div);
-        if (savedPartitions.includes(p.pos)) document.getElementById(`partition-${p.pos}`).checked = true;
+        if (savedPartitions.includes(p.pos)) {
+            document.getElementById(`partition-${p.pos}`).checked = true;
+        }
     });
 }
 
@@ -434,12 +437,26 @@ function updateZones(data) {
         const end = Math.min(start + perCol, data.length);
         for (let i = start; i < end; i++) {
             const z = data[i];
-            let txt = z.inibida ? "Inibida" : z.excluida ? "Excluída" : z.aberta ? "Aberta" : z.tamper ? "Tamper" : z.disparada ? "Disparada" : "OK";
-            let cls = z.inibida ? "inibida" : z.excluida ? "excluida" : z.aberta || z.disparada ? "aberto" : z.tamper ? "tamper" : "ok";
-            const num = String(z.pos).padStart(2,'0');
+            const txt = z.inibida ? "Inibida"
+                : z.excluida ? "Excluída"
+                : z.aberta ? "Aberta"
+                : z.tamper ? "Tamper"
+                : z.disparada ? "Disparada"
+                : "OK";
+            const cls = z.inibida ? "inibida"
+                : z.excluida ? "excluida"
+                : (z.aberta || z.disparada) ? "aberto"
+                : z.tamper ? "tamper"
+                : "ok";
+            const num = String(z.pos).padStart(2, '0');
+
             const div = document.createElement('div');
             div.className = 'zone-item';
-            div.innerHTML = `<label for="zone-${z.pos}">Sensor ${num}: ${txt}</label>`;
+            div.innerHTML = `
+                <input type="checkbox" id="zone-${z.pos}" value="${z.pos}">
+                <span class="zone-status ${cls}">${txt}</span>
+                <label for="zone-${z.pos}">Sensor ${num}: ${txt}</label>
+            `;
             colDiv.appendChild(div);
         }
         zonesColumns.appendChild(colDiv);
