@@ -60,7 +60,8 @@ class HotReload {
                 currentClientId: window.currentClientId || null,
                 selectedEvent: window.selectedEvent || null,
                 selectedUnit: document.getElementById('unit-select')?.value || null,
-                autoUpdate: document.getElementById('auto-update')?.checked || false
+                autoUpdate: document.getElementById('auto-update')?.checked || false,
+                currentUser: window.currentUser || null          // <-- novo
             };
             
             sessionStorage.setItem('viawebState', JSON.stringify(state));
@@ -73,7 +74,18 @@ class HotReload {
     restoreState() {
         try {
             const saved = sessionStorage.getItem('viawebState');
+
             if (!saved) return false;
+
+            if (state.currentUser) {
+                window.currentUser = state.currentUser;
+                // Se o AuthManager já existe, atualiza UI e fecha modal
+                if (window.authManager) {
+                    window.authManager.renderUser?.();
+                    window.authManager.hide?.();
+                }
+            }
+
             
             const state = JSON.parse(saved);
             

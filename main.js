@@ -225,7 +225,6 @@ class AuthManager {
         this.submitBtn = document.getElementById('auth-submit-btn');
         this.cancelBtn = document.getElementById('auth-cancel-btn');
 
-        // Guarda defensiva: se a UI não está no DOM, não continua
         if (!this.overlay || !this.inputUser || !this.inputPass || !this.userLabel) {
             console.warn('AuthManager: elementos de autenticação não encontrados.');
             return;
@@ -233,7 +232,11 @@ class AuthManager {
 
         this.bindEvents();
         this.renderUser();
-        this.show(); // força login na carga
+        if (currentUser) {
+            this.hide();
+        } else {
+            this.show();
+        }
     }
 
     bindEvents() {
@@ -243,6 +246,14 @@ class AuthManager {
         this.overlay?.addEventListener('click', (e) => {
             if (e.target === this.overlay) this.hide();
         });
+        const handleEnter = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.login();
+            }
+        };
+        this.inputUser?.addEventListener('keydown', handleEnter);
+        this.inputPass?.addEventListener('keydown', handleEnter);
     }
 
     renderUser() {

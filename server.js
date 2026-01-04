@@ -6,6 +6,7 @@ const express = require('express');
 const mssql = require('mssql');
 const dbConfig = require('./db-config');
 const { spawn } = require('child_process');
+const { LogsRepository } = require('./logs-repository');
 
 // Try to use structured logger, fallback to console if winston not available
 let logger;
@@ -58,6 +59,7 @@ let globalIvSend = null;
 let globalIvRecv = null;
 let tcpIdentSent = false;
 let dbPool = null;
+const logsRepo = new LogsRepository(connectDatabase);
 
 // Buffer de recepção para montar blocos completos (múltiplos de 16)
 let tcpRecvBuffer = Buffer.alloc(0);
@@ -118,6 +120,15 @@ async function connectDatabase() {
 const app = express();
 
 app.use(express.json({ limit: '10kb' }));
+
+(async () => {
+    try {
+        await logsRepo.ensureSchema();
+        logger.info('✅ Schema de LOGS verificado/criado');
+    } catch (e) {
+        logger.error('❌ Falha ao garantir schema de LOGS: ' + e.message);
+    }
+})();
 
 // Rate limiting middleware (simple implementation)
 const rateLimitMap = new Map();
@@ -231,6 +242,21 @@ app.post('/api/login', async (req, res) => {
     } catch (e) {
         logger.error('❌ AD auth error: ' + e.message);
         return res.status(500).json({ success: false, error: 'Falha ao autenticar no AD' });
+    }
+});
+
+app.post('/api/logs/close', async (req, res) => {
+    const { event, closure } = req.body || {};
+    if (!closure) {
+        return res.status(400).json({ success: false, error: 'Dados de encerramento ausentes' });
+    }
+    try {
+        await logsRepo.saveEventAndClosure(event, closure);
+        return res.json({ success: true });
+    } catch (e) {
+        logger.error('❌ API /api/logs/close: ' + e.message);
+        metrics.recordError();
+        return res.status(500).json({ success: false, error: 'Falha ao salvar encerramento' });
     }
 });
 
