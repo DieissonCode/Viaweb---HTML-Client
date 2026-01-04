@@ -108,9 +108,9 @@ function formatISEP(idISEP) {
 }
 
 /**
- * listarClientes
- * - Se idISEPArray for fornecido (array), filtra pelos ISEP informados.
- * - Se não for fornecido, lista todos os clientes de todos os servidores (conforme doc).
+  listarClientes
+  - Se idISEPArray for fornecido (array), filtra pelos ISEP informados.
+  - Se não for fornecido, lista todos os clientes de todos os servidores (conforme doc).
  */
 function createListarClientesCommand(idISEPArray = undefined, commandId = Date.now()) {
     const op = {
