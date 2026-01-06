@@ -1,4 +1,27 @@
-﻿﻿const mssql = require('mssql');
+﻿const mssql = require('mssql');
+
+// Cache simples em memória para deduplicação (evita consultas ao BD)
+const DEDUPE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+const dedupeCache = new Map(); // key -> { ts, count }
+
+function pruneDedupeCache() {
+    const now = Date.now();
+    for (const [key, val] of dedupeCache.entries()) {
+        if (!val || !val.ts || now - val.ts > DEDUPE_TTL_MS) dedupeCache.delete(key);
+    }
+}
+
+function normalizeComplemento(comp) {
+    if (comp === undefined || comp === null || comp === '') return '0';
+    const s = String(comp).trim();
+    if (s === '-') return '0';
+    return s;
+}
+
+function makeDedupeKey(codigo, isep, complemento, dataEventoStr) {
+    const comp = normalizeComplemento(complemento);
+    return `${codigo}|${isep}|${comp}|${dataEventoStr}`;
+}
 
 function normalizeText(val) {
     return (val === null || val === undefined) ? '' : String(val);
@@ -34,6 +57,19 @@ function logQuery(step, sql, params) {
     console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
 }
 
+// Garante separador " - " para arma/desarma programado (complemento 0)
+function normalizeArmDisarmDescricao(descricao, codigo, complemento) {
+    if (!descricao) return descricao;
+    const cod = String(codigo || '').trim();
+    const isArmDisarm = ['1401','1402','1403','3401','3402','3403','3456'].includes(cod);
+    const hasHorario = descricao.includes('[Horário Programado]');
+    const alreadyHasDash = descricao.includes(' - [Horário Programado]');
+    if (isArmDisarm && hasHorario && !alreadyHasDash) {
+        return descricao.replace('[Horário Programado]', '- [Horário Programado]');
+    }
+    return descricao;
+}
+
 class LogsRepository {
     constructor(getPoolFn) {
         this.getPool = getPoolFn;
@@ -44,21 +80,35 @@ class LogsRepository {
         if (!event) return null;
         const pool = await this.getPool();
         const codigo = normalizeText(event.codigoEvento || event.codigo || event.code);
-        const complemento = normalizeText(event.complemento);
+        const complementoRaw = normalizeText(event.complemento);
+        const complemento = normalizeComplemento(complementoRaw);
         const particao = normalizeText(event.particao);
         const local = normalizeText(event.local || event.isep || event.clientId);
         const isep = normalizeText(event.isep || event.local || event.clientId);
-        const descricao = normalizeText(event.descricao);
         const dataEventoDate = event.timestamp ? toDateGmt3(event.timestamp) : new Date();
         const dataEventoStr = formatDateTimeSql(dataEventoDate);
-        const rawEvent = JSON.stringify(event || {});
+
+        let descricao = normalizeText(event.descricao);
+        descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
+
+        const normalizedEvent = { ...event, complemento };
+        const rawEvent = JSON.stringify(normalizedEvent || {});
+
+        // Dedup em memória (sem consulta ao BD)
+        pruneDedupeCache();
+        const dedupeKey = makeDedupeKey(codigo, isep, complemento, dataEventoStr);
+        if (dedupeCache.has(dedupeKey)) {
+            logDebug('saveIncomingEvent - skip duplicate (memory)', { dedupeKey });
+            return null;
+        }
+        dedupeCache.set(dedupeKey, { ts: Date.now(), count: 1 });
 
         const sql = `
             INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, RawEvent)
             OUTPUT INSERTED.Id
             VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @RawEvent);
         `;
-        const params = { Codigo: codigo, CodigoEvento: codigo, Complemento: complemento, Particao: particao, Local: local, ISEP: isep, Descricao: descricao, DataEventoStr: dataEventoStr, RawEvent: event };
+        const params = { Codigo: codigo, CodigoEvento: codigo, Complemento: complemento, Particao: particao, Local: local, ISEP: isep, Descricao: descricao, DataEventoStr: dataEventoStr, RawEvent: normalizedEvent };
         logQuery('event(incoming)', sql, params);
 
         const result = await pool.request()
@@ -81,7 +131,7 @@ class LogsRepository {
     async findEventId(event) {
         const pool = await this.getPool();
         const codigo = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
-        const complemento = normalizeText(event?.complemento);
+        const complemento = normalizeComplemento(event?.complemento);
         const particao = normalizeText(event?.particao);
         const isep = normalizeText(event?.isep || event?.local || event?.clientId);
         const dataEventoStr = event?.timestamp ? formatDateTimeSql(toDateGmt3(event.timestamp)) : null;
@@ -116,7 +166,7 @@ class LogsRepository {
             EventId: eventId,
             ISEP: normalizeText(isepFromEvent),
             Codigo: normalizeText(codigoFromEvent),
-            Complemento: normalizeText(extra?.complemento),
+            Complemento: normalizeComplemento(extra?.complemento),
             Particao: normalizeText(extra?.particao),
             Descricao: normalizeText(extra?.descricao),
             DataEventoStr: extra?.dataEventoStr || (extra?.dataEvento ? formatDateTimeSql(extra.dataEvento) : null),
@@ -160,15 +210,18 @@ class LogsRepository {
 
         try {
             const codigo = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
-            const complemento = normalizeText(event?.complemento);
+            const complementoRaw = normalizeText(event?.complemento);
+            const complemento = normalizeComplemento(complementoRaw);
             const particao = normalizeText(event?.particao);
             const local = normalizeText(event?.local);
             const isep = normalizeText(event?.isep || event?.local || event?.clientId);
-            const rawEvent = JSON.stringify(event || {});
+            let descricao = normalizeText(event?.descricao);
+            descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
+            const normalizedEvent = { ...event, complemento };
+            const rawEvent = JSON.stringify(normalizedEvent || {});
             const type = normalizeText(closure?.type);
             const procedureText = normalizeText(closure?.procedureText);
             const userName = normalizeText(closure?.user?.displayName || closure?.user?.username);
-            const descricao = normalizeText(event?.descricao);
             const dataEventoDate = event?.timestamp ? toDateGmt3(event.timestamp) : new Date();
             const dataEventoStr = formatDateTimeSql(dataEventoDate);
 
@@ -176,7 +229,7 @@ class LogsRepository {
                 codigo, complemento, particao, local, isep, type, procedureText, userName, descricao, dataEventoStr
             });
 
-            let eventId = await this.findEventId(event);
+            let eventId = await this.findEventId({ ...event, complemento });
 
             if (!eventId) {
                 const sqlEvent = `
@@ -193,7 +246,7 @@ class LogsRepository {
                     ISEP: isep,
                     Descricao: descricao,
                     DataEventoStr: dataEventoStr,
-                    RawEvent: event
+                    RawEvent: normalizedEvent
                 });
 
                 const reqEvent = new mssql.Request(tx);
@@ -258,7 +311,7 @@ class LogsRepository {
                 .input('ClosureId', mssql.Int, closureId)
                 .query(`UPDATE LOGS.Events SET ClosureId = @ClosureId WHERE Id = @EventId;`);
 
-            await new mssql.Request(tx) // Marca TODOS os eventos do mesmo ISEP, a partir do horário do disparo (inclusive)
+            await new mssql.Request(tx)
                 .input('ClosureId', mssql.Int, closureId)
                 .input('ISEP', mssql.NVarChar(10), isep)
                 .input('DataEventoStr', mssql.NVarChar(30), dataEventoStr)

@@ -78,6 +78,25 @@ let unitStatusSince = null;
 // Map ISEP -> { status: 'online'|'offline', since: timestamp(ms) }
 const statusCache = new Map();
 
+// Dedup de eventos no front (TTL 5min)
+const EVENT_DEDUPE_TTL = 5 * 60 * 1000;
+const eventDedupeCache = new Map();
+function pruneEventDedupeCache() {
+    const now = Date.now();
+    for (const [k, v] of eventDedupeCache.entries()) {
+        if (!v || !v.ts || now - v.ts > EVENT_DEDUPE_TTL) eventDedupeCache.delete(k);
+    }
+}
+function normalizeComplementoForDedupe(comp) {
+    if (comp === undefined || comp === null || comp === '') return '0';
+    const s = String(comp).trim();
+    if (s === '-') return '0';
+    return s;
+}
+function makeEventDedupeKey(cod, isep, comp, ts) {
+    return `${cod}|${isep}|${normalizeComplementoForDedupe(comp)}|${ts}`;
+}
+
 // Bloqueio/desbloqueio de UI por autenticação
 function setAuthLock(locked) {
     const ctrls = [
@@ -279,7 +298,6 @@ class CloseEventModal {
             this.tbody.appendChild(tr);
         });
     }
-
 }
 
 class AuthManager {
@@ -485,23 +503,35 @@ function ingestNormalizedEvent(ev) {
             if (activePendentes.has(falhaKey)) activePendentes.get(falhaKey).resolved = true;
         }
     }
-
 }
 
 // ---------- Normalização de evento recebido em tempo real ----------
 function processEvent(data) {
+    // data pode vir como {oper:[op]} ou op direto
     const msg = data.oper?.[0] || data;
     const cod = msg.codigoEvento || 'N/A';
     if (cod === "1412") return;
 
+    const rawComplement = (msg.zonaUsuario !== undefined ? msg.zonaUsuario : msg.complemento);
+    const hasComplemento = rawComplement !== undefined && rawComplement !== null;
+    let zonaUsuario = hasComplemento ? Number(rawComplement) : 0;
+    if (Number.isNaN(zonaUsuario)) zonaUsuario = 0;
+
     let id = (msg.id || '').replace(/-(evento|evento-)/g, '');
-    const hasComplemento = Object.prototype.hasOwnProperty.call(msg, 'zonaUsuario') || Object.prototype.hasOwnProperty.call(msg, 'complemento');
-    const zonaUsuario = hasComplemento ? Number(msg.zonaUsuario ?? msg.complemento ?? 0) : 0;
     const part = msg.particao || 1;
     const local = msg.isep || 'N/A';
     const clientId = msg.isep || msg.contaCliente || currentClientId;
     let ts = msg.recepcao || Date.now();
     if (ts < 10000000000) ts *= 1000;
+
+    // Dedup em memória (front)
+    pruneEventDedupeCache();
+    const dedupeKey = makeEventDedupeKey(cod, clientId || local, zonaUsuario, ts);
+    if (eventDedupeCache.has(dedupeKey)) {
+        console.debug('[dedupe] evento ignorado (front):', dedupeKey);
+        return;
+    }
+    eventDedupeCache.set(dedupeKey, { ts: Date.now() });
 
     const d = new Date(ts);
     const dia = d.getDate().toString().padStart(2, '0');
@@ -559,7 +589,7 @@ function processEvent(data) {
         }
     }
 
-    const complementoVal = hasComplemento ? zonaUsuario : '-';
+    const complementoVal = hasComplemento ? zonaUsuario : 0;
 
     const ev = {
         id,
@@ -600,17 +630,19 @@ function hydrateEventFromDbRow(row) {
         raw = {};
     }
     const codigo = row.CodigoEvento || row.Codigo || raw.codigoEvento || raw.codigo || 'N/A';
+
+    // 📌 Use componentes UTC para não subtrair o fuso local
     const timestamp = row.DataEvento ? new Date(row.DataEvento).getTime() : (raw.timestamp || Date.now());
     const d = new Date(timestamp);
-    const dia = d.getDate().toString().padStart(2, '0');
-    const mes = (d.getMonth() + 1).toString().padStart(2, '0');
-    const ano = d.getFullYear();
-    const hora = d.getHours().toString().padStart(2, '0');
-    const min = d.getMinutes().toString().padStart(2, '0');
-    const seg = d.getSeconds().toString().padStart(2, '0');
+    const dia = d.getUTCDate().toString().padStart(2, '0');
+    const mes = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+    const ano = d.getUTCFullYear();
+    const hora = d.getUTCHours().toString().padStart(2, '0');
+    const min = d.getUTCMinutes().toString().padStart(2, '0');
+    const seg = d.getUTCSeconds().toString().padStart(2, '0');
 
     const complementoRaw = (row.Complemento !== undefined ? row.Complemento : raw.complemento);
-    const complementoDisplay = (complementoRaw === null || complementoRaw === undefined || complementoRaw === '') ? '-' : complementoRaw;
+    const complementoDisplay = (complementoRaw === null || complementoRaw === undefined || complementoRaw === '') ? '0' : normalizeComplementoForDedupe(complementoRaw);
     const local = row.ISEP || row.Local || raw.local || raw.isep || raw.clientId || 'N/A';
     const particao = row.Particao || raw.particao || 1;
 
@@ -832,7 +864,6 @@ function updateCounts() {
 }
 
 window.updateCounts = updateCounts;
-
 
 // ---------- Filtro ----------
 function filterEvents(term) {
@@ -1276,11 +1307,18 @@ function connectWebSocket() {
                 if (data.oper && Array.isArray(data.oper)) {
                     for (const op of data.oper) {
                         if (op.acao === 'evento') {
-                            processEvent(data);
+                            processEvent({ oper: [op] }); // processa somente este evento
                             ws.send(JSON.stringify({ resp: [{ id: op.id }] }));
-                            return;
+                        } else if (op.resp && Array.isArray(op.resp)) {
+                            op.resp.forEach(r => {
+                                if (pendingCommands.has(r.id)) {
+                                    pendingCommands.get(r.id)(r);
+                                    pendingCommands.delete(r.id);
+                                }
+                            });
                         }
                     }
+                    return;
                 }
                 if (data.resp && Array.isArray(data.resp)) {
                     data.resp.forEach(r => {
