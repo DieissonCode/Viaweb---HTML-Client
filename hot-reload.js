@@ -1,17 +1,17 @@
-﻿// hot-reload.js - Sistema de hot reload que preserva estado
+﻿// hot-reload.js - Sistema de hot reload que preserva estado (agora ignorando eventos)
 class HotReload {
     constructor(checkInterval = 2000) {
         this.checkInterval = checkInterval;
         this.lastModified = null;
         this.isReloading = false;
         
-        // Salva referências aos dados globais do main.js
+        // Somente referências de estado que não envolvem eventos
         this.savedState = {
-            allEvents: [],
-            activeAlarms: new Map(),
-            activePendentes: new Map(),
             currentClientId: null,
-            selectedEvent: null
+            selectedEvent: null,
+            selectedUnit: null,
+            autoUpdate: false,
+            currentUser: null
         };
         
         this.init();
@@ -52,9 +52,7 @@ class HotReload {
     saveState() {
         try {
             const state = {
-                allEvents: window.allEvents || [],
-                activeAlarms: Array.from(window.activeAlarms || new Map()),
-                activePendentes: Array.from(window.activePendentes || new Map()),
+                // IGNORANDO eventos
                 currentClientId: window.currentClientId || null,
                 selectedEvent: window.selectedEvent || null,
                 selectedUnit: document.getElementById('unit-select')?.value || null,
@@ -63,7 +61,7 @@ class HotReload {
             };
             
             sessionStorage.setItem('viawebState', JSON.stringify(state));
-            console.log('💾 Estado salvo:', state.allEvents.length, 'eventos');
+            console.log('💾 Estado salvo (sem eventos)');
         } catch (err) {
             console.error('❌ Erro ao salvar estado:', err);
         }
@@ -75,9 +73,6 @@ class HotReload {
             if (!saved) return false;
 
             const state = JSON.parse(saved);
-            const hasEvents = Array.isArray(state.allEvents) && state.allEvents.length > 0;
-            const hasAlarms = Array.isArray(state.activeAlarms) && state.activeAlarms.length > 0;
-            const hasPend = Array.isArray(state.activePendentes) && state.activePendentes.length > 0;
 
             if (state.currentUser) {
                 window.currentUser = state.currentUser;
@@ -87,26 +82,7 @@ class HotReload {
                 }
             }
 
-            // Só restaura coleções se vierem com dados
-            if (hasEvents && window.allEvents) {
-                window.allEvents.length = 0;
-                window.allEvents.push(...state.allEvents);
-            }
-            
-            if (hasAlarms && window.activeAlarms) {
-                window.activeAlarms.clear();
-                state.activeAlarms.forEach(([key, value]) => {
-                    window.activeAlarms.set(key, value);
-                });
-            }
-            
-            if (hasPend && window.activePendentes) {
-                window.activePendentes.clear();
-                state.activePendentes.forEach(([key, value]) => {
-                    window.activePendentes.set(key, value);
-                });
-            }
-            
+            // NÃO restaura eventos/alarms/pendentes
             if (state.currentClientId) {
                 window.currentClientId = state.currentClientId;
             }
@@ -134,7 +110,7 @@ class HotReload {
             if (window.updateCounts) window.updateCounts();
             if (window.updateEventList) window.updateEventList();
 
-            console.log('✅ Estado restaurado:', (window.allEvents?.length || 0), 'eventos');
+            console.log('✅ Estado restaurado (sem eventos)');
 
             sessionStorage.removeItem('viawebState');
 
