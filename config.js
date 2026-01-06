@@ -64,6 +64,9 @@
         "1401": "Desarmado",
         "3401": "Armado",
 
+        "1992": "Disparo de Gerador de Névoa",
+        "3992": "Restauro de Gerador de Névoa",
+
         "1402": "Desarmado",
         "3402": "Armado",
 
