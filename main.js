@@ -266,7 +266,7 @@ class CloseEventModal {
         events.forEach(ev => {
             const tr = document.createElement('tr');
             const partName = getPartitionName(ev.particao, ev.clientId);
-            const complemento = ev.complemento && ev.complemento !== '-' ? ev.complemento : '-';
+            const complemento = (ev.complemento !== undefined && ev.complemento !== null && ev.complemento !== '') ? ev.complemento : '-';
             tr.innerHTML = `
                 <td>${ev.data}</td>
                 <td>${ev.hora}</td>
@@ -279,6 +279,7 @@ class CloseEventModal {
             this.tbody.appendChild(tr);
         });
     }
+
 }
 
 class AuthManager {
@@ -470,7 +471,9 @@ function ingestNormalizedEvent(ev) {
     const isRestauro = ev.codigoEvento.startsWith('3') && sistemaCodes.includes(ev.codigoEvento);
 
     if (isFalha || isRestauro) {
-        const zona = ev.complemento && ev.complemento !== '-' ? ev.complemento : 0;
+        const zona = (ev.complemento !== '-' && ev.complemento !== '' && ev.complemento !== null && ev.complemento !== undefined)
+            ? ev.complemento
+            : 0;
         const key = `${ev.local}-${ev.codigoEvento}-${zona}`;
         if (isFalha) {
             if (!activePendentes.has(key)) activePendentes.set(key, { first: ev, events: [], resolved: false });
@@ -482,6 +485,7 @@ function ingestNormalizedEvent(ev) {
             if (activePendentes.has(falhaKey)) activePendentes.get(falhaKey).resolved = true;
         }
     }
+
 }
 
 // ---------- Normalização de evento recebido em tempo real ----------
@@ -491,7 +495,8 @@ function processEvent(data) {
     if (cod === "1412") return;
 
     let id = (msg.id || '').replace(/-(evento|evento-)/g, '');
-    const zonaUsuario = msg.zonaUsuario || 0;
+    const hasComplemento = Object.prototype.hasOwnProperty.call(msg, 'zonaUsuario') || Object.prototype.hasOwnProperty.call(msg, 'complemento');
+    const zonaUsuario = hasComplemento ? Number(msg.zonaUsuario ?? msg.complemento ?? 0) : 0;
     const part = msg.particao || 1;
     const local = msg.isep || 'N/A';
     const clientId = msg.isep || msg.contaCliente || currentClientId;
@@ -499,12 +504,12 @@ function processEvent(data) {
     if (ts < 10000000000) ts *= 1000;
 
     const d = new Date(ts);
-    const dia = d.getDate().toString().padStart(2,'0');
-    const mes = (d.getMonth()+1).toString().padStart(2,'0');
+    const dia = d.getDate().toString().padStart(2, '0');
+    const mes = (d.getMonth() + 1).toString().padStart(2, '0');
     const ano = d.getFullYear();
-    const hora = d.getHours().toString().padStart(2,'0');
-    const min = d.getMinutes().toString().padStart(2,'0');
-    const seg = d.getSeconds().toString().padStart(2,'0');
+    const hora = d.getHours().toString().padStart(2, '0');
+    const min = d.getMinutes().toString().padStart(2, '0');
+    const seg = d.getSeconds().toString().padStart(2, '0');
 
     let desc = eventosDB[cod] || `Evento ${cod}`;
     if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
@@ -515,33 +520,36 @@ function processEvent(data) {
     let extraClass = '';
     if (cod === '1570') extraClass = 'inibida';
 
-    // ----- Monta descrição com usuário (se arm/disarm) sem mutar depois -----
+    const tipos = {
+        0: '[Horário Programado]',
+        1: '[Monitoramento]',
+        2: '[Facilitador]',
+        3: '[Senha de Uso Único]',
+        4: '[Senha de Uso Único]',
+        5: '[Senha de Uso Único]',
+        6: '[TI - Manutenção]'
+    };
+    const appendTipo = (base, tipo) => {
+        const baseTrim = (base || '').trimEnd();
+        if (baseTrim.includes(tipo)) return baseTrim;
+        return `${baseTrim} ${tipo}`.trim();
+    };
+
     const baseDescricao = desc;
     let displayDesc = baseDescricao;
-    let userData = null;
     let userName = null;
     let userId = null;
     let userMatricula = null;
 
-    if (isArmDisarm && zonaUsuario > 0 && window.UsersDB) {
-        const tipos = {
-            0: '[Horário Programado]',
-            1: '[Monitoramento]',
-            2: '[Facilitador]',
-            3: '[Senha de Uso Único]',
-            4: '[Senha de Uso Único]',
-            5: '[Senha de Uso Único]',
-            6: '[TI - Manutenção]'
-        };
-
+    if (isArmDisarm && hasComplemento && window.UsersDB) {
         if (tipos[zonaUsuario]) {
-            displayDesc += tipos[zonaUsuario];
+            displayDesc = appendTipo(baseDescricao, tipos[zonaUsuario]);
         } else {
-            displayDesc += `Usuário Não Cadastrado | ${zonaUsuario}`;
+            displayDesc = `${baseDescricao.trimEnd()} Usuário Não Cadastrado | ${zonaUsuario}`;
         }
 
         const usersByIsep = window.UsersDB.getUsersByIsep(String(local)) || [];
-        userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
+        const userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
 
         if (userData && !tipos[zonaUsuario]) {
             userName = window.UsersDB.formatUserName(userData);
@@ -551,12 +559,14 @@ function processEvent(data) {
         }
     }
 
+    const complementoVal = hasComplemento ? zonaUsuario : '-';
+
     const ev = {
         id,
         local,
         data: `${dia}/${mes}/${ano}`,
         hora: `${hora}:${min}:${seg}`,
-        complemento: zonaUsuario > 0 ? zonaUsuario : '-',
+        complemento: complementoVal,
         particao: part,
         baseDescricao,
         descricao: displayDesc,
@@ -572,7 +582,6 @@ function processEvent(data) {
     ingestNormalizedEvent(ev);
     updateEventList();
 
-    // Envia para logs com os metadados de usuário
     fetch('/api/logs/event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -593,18 +602,21 @@ function hydrateEventFromDbRow(row) {
     const codigo = row.CodigoEvento || row.Codigo || raw.codigoEvento || raw.codigo || 'N/A';
     const timestamp = row.DataEvento ? new Date(row.DataEvento).getTime() : (raw.timestamp || Date.now());
     const d = new Date(timestamp);
-    const dia = d.getDate().toString().padStart(2,'0');
-    const mes = (d.getMonth()+1).toString().padStart(2,'0');
+    const dia = d.getDate().toString().padStart(2, '0');
+    const mes = (d.getMonth() + 1).toString().padStart(2, '0');
     const ano = d.getFullYear();
-    const hora = d.getHours().toString().padStart(2,'0');
-    const min = d.getMinutes().toString().padStart(2,'0');
-    const seg = d.getSeconds().toString().padStart(2,'0');
+    const hora = d.getHours().toString().padStart(2, '0');
+    const min = d.getMinutes().toString().padStart(2, '0');
+    const seg = d.getSeconds().toString().padStart(2, '0');
 
-    const complemento = row.Complemento ?? raw.complemento ?? '-';
+    const complementoRaw = (row.Complemento !== undefined ? row.Complemento : raw.complemento);
+    const complementoDisplay = (complementoRaw === null || complementoRaw === undefined || complementoRaw === '') ? '-' : complementoRaw;
     const local = row.ISEP || row.Local || raw.local || raw.isep || raw.clientId || 'N/A';
     const particao = row.Particao || raw.particao || 1;
 
-    const baseDesc = raw.baseDescricao || row.Descricao || eventosDB[codigo] || `Evento ${codigo}`;
+    const baseDesc = raw.descricao || row.Descricao || eventosDB[codigo] || `Evento ${codigo}`;
+    const descFinal = (row.Descricao && row.Descricao.trim().length) ? row.Descricao : (raw.descricao || baseDesc);
+
     const userName = raw.userName || null;
     const userId = raw.userId || null;
     const userMatricula = raw.userMatricula || null;
@@ -614,10 +626,10 @@ function hydrateEventFromDbRow(row) {
         local,
         data: `${dia}/${mes}/${ano}`,
         hora: `${hora}:${min}:${seg}`,
-        complemento: complemento === '' ? '-' : complemento,
+        complemento: complementoDisplay,
         particao,
         baseDescricao: baseDesc,
-        descricao: raw.descricao || baseDesc,
+        descricao: descFinal,
         codigoEvento: codigo,
         clientId: local,
         timestamp,
@@ -868,6 +880,21 @@ function updateEventList() {
     const maxDisplayEvents = 100;
     const displayEvents = filtered.slice(-maxDisplayEvents).reverse();
 
+    const tipos = {
+        0: '[Horário Programado]',
+        1: '[Monitoramento]',
+        2: '[Facilitador]',
+        3: '[Senha de Uso Único]',
+        4: '[Senha de Uso Único]',
+        5: '[Senha de Uso Único]',
+        6: '[TI - Manutenção]'
+    };
+    const appendTipo = (base, tipo) => {
+        const baseTrim = (base || '').trimEnd();
+        if (baseTrim.includes(tipo)) return baseTrim;
+        return `${baseTrim} ${tipo}`.trim();
+    };
+
     displayEvents.forEach(item => {
         let ev, count = 1;
         if (item.group) {
@@ -895,28 +922,34 @@ function updateEventList() {
         let desc = descBase;
         if (count > 1) desc += ` (${count} eventos)`;
 
-        const tipos = {
-            0: '[Horário Programado]',
-            1: '[Monitoramento]',
-            2: '[Facilitador]',
-            3: '[Senha de Uso Único]',
-            4: '[Senha de Uso Único]',
-            5: '[Senha de Uso Único]',
-            6: '[TI - Manutenção]'
-        };
-
         const complemento = ev.complemento;
         let userData = null;
 
-        if (isArmDisarmCode && complemento && complemento !== '-') {
+        const shouldRebuildDesc =
+            isArmDisarmCode &&
+            complemento !== '-' &&
+            complemento !== '' &&
+            complemento !== null &&
+            complemento !== undefined &&
+            complemento !== 0 &&
+            complemento !== '0' &&
+            !ev.userName &&
+            !(tipos[Number(complemento)] && descBase.includes(tipos[Number(complemento)]));
+
+        if (shouldRebuildDesc) {
             const zonaUsuario = Number(complemento);
             if (ev.userName) {
                 desc = `${descBase}${ev.userName}${count > 1 ? ` (${count} eventos)` : ''}`;
             } else if (tipos[zonaUsuario]) {
-                desc = `${descBase}${tipos[zonaUsuario]}${count > 1 ? ` (${count} eventos)` : ''}`;
+                desc = `${appendTipo(descBase, tipos[zonaUsuario])}${count > 1 ? ` (${count} eventos)` : ''}`;
             } else {
-                desc = `${descBase}Usuário Não Cadastrado | ${complemento}${count > 1 ? ` (${count} eventos)` : ''}`;
+                desc = `${descBase.trimEnd()} Usuário Não Cadastrado | ${complemento}${count > 1 ? ` (${count} eventos)` : ''}`;
             }
+            const usersByIsep = window.UsersDB.getUsersByIsep(String(ev.local || ev.clientId)) || [];
+            userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
+        } else if (isArmDisarmCode && complemento !== '-' && complemento !== '' && complemento !== null && complemento !== undefined) {
+            // mantém descrição original e ainda tenta tooltip se for possível
+            const zonaUsuario = Number(complemento);
             const usersByIsep = window.UsersDB.getUsersByIsep(String(ev.local || ev.clientId)) || [];
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
         }
