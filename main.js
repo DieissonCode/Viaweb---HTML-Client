@@ -186,6 +186,9 @@ let eventsByLocal = new Map();
 let eventsByCode = new Map();
 let unitSelectDebounce = null;
 
+const lockedEvents = new Map(); // eventKey -> { operador, lockedAt }
+let lockKeepAliveInterval = null;
+
 class DebouncedSelector { // Controller OO para debounce de seleção de unidade
     constructor(delayMs, onSelect) {
         this.delayMs = delayMs;
@@ -242,16 +245,98 @@ class CloseEventModal {
         this.modal = document.getElementById('closeEventModal');
         this.modalContent = this.modal?.querySelector('.modal-content');
         this.procedureText = document.getElementById('procedureText');
+        this.currentEventKey = null;
     }
 
-    open(group, type) {
+    async open(group, type) {
         selectedPendingEvent = { group, type };
+        
+        // Gera chave única do evento
+        const ev = group?.first || {};
+        const eventKey = `${ev.local}-${ev.codigoEvento}-${ev.complemento || 0}`;
+        
+        // Tenta adquirir lock
+        const lockResult = await this.acquireLock(eventKey);
+        
+        if (!lockResult.success) {
+            alert(`Este evento já está sendo atendido por: ${lockResult.lockedBy}\n\nAguarde o atendimento ser finalizado ou cancelado.`);
+            selectedPendingEvent = null;
+            return;
+        }
+        
+        this.currentEventKey = eventKey;
+        
         if (this.modal) {
             this.modal.style.display = 'block';
             if (this.modalContent) this.modalContent.scrollTop = 0;
         }
         this.render(group, type);
         this.procedureText?.focus();
+        
+        // Inicia keepalive do lock
+        this.startLockKeepAlive();
+    }
+
+    async acquireLock(eventKey) {
+        try {
+            const resp = await fetch('/api/logs/lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    eventKey,
+                    operador: currentUser?.displayName || 'Anônimo'
+                })
+            });
+            return await resp.json();
+        } catch (err) {
+            console.error('Erro ao adquirir lock:', err);
+            return { success: false, error: 'Falha na comunicação' };
+        }
+    }
+
+    async releaseLock() {
+        if (!this.currentEventKey) return;
+        
+        try {
+            await fetch('/api/logs/unlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    eventKey: this.currentEventKey,
+                    operador: currentUser?.displayName || 'Anônimo'
+                })
+            });
+        } catch (err) {
+            console.error('Erro ao liberar lock:', err);
+        }
+        
+        this.currentEventKey = null;
+        this.stopLockKeepAlive();
+    }
+
+    startLockKeepAlive() {
+        this.stopLockKeepAlive();
+        
+        // Renova lock a cada 30s
+        lockKeepAliveInterval = setInterval(async () => {
+            if (this.currentEventKey) {
+                await this.acquireLock(this.currentEventKey);
+            }
+        }, 30000);
+    }
+
+    stopLockKeepAlive() {
+        if (lockKeepAliveInterval) {
+            clearInterval(lockKeepAliveInterval);
+            lockKeepAliveInterval = null;
+        }
+    }
+
+    close() {
+        this.releaseLock();
+        if (this.modal) this.modal.style.display = 'none';
+        if (this.procedureText) this.procedureText.value = '';
+        selectedPendingEvent = null;
     }
 
     render(group, type) {
@@ -545,6 +630,7 @@ function processEvent(data) {
     if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
 
     const isArmDisarm = armDisarmCodes.includes(cod);
+
     if (zonaUsuario > 0) desc += ` - ${isArmDisarm ? '' : 'Sensor ' + zonaUsuario}`;
 
     let extraClass = '';
@@ -930,7 +1016,7 @@ function updateEventList() {
         let ev, count = 1;
         if (item.group) {
             ev = item.group.first;
-            count = 1 + (item.group.events?.length || 0);
+            count = getAssociatedEventsForAlarm(item.group).length;
         } else {
             ev = item;
         }
@@ -939,6 +1025,13 @@ function updateEventList() {
         tr.className = `event-row ${ev.extraClass || ''}`;
         const cod = ev.codigoEvento;
         const isArmDisarmCode = armDisarmCodes.includes(cod);
+        const eventKey = `${ev.local}-${ev.codigoEvento}-${ev.complemento || 0}`;
+        const lockInfo = lockedEvents.get(eventKey);
+
+        if (lockInfo) {
+            tr.classList.add('event-locked');
+            tr.title = `Em atendimento por: ${lockInfo.operador}`;
+        }
 
         if (cod === '1130') tr.classList.add('alarm');
         else if (cod === '1AA6' || cod === 'EAA6') tr.classList.add('offline');
@@ -985,7 +1078,7 @@ function updateEventList() {
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
         }
 
-        tr.innerHTML = `<td>${ev.local || 'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}</td>`;
+        tr.innerHTML = `<td>${ev.local || 'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}${lockInfo ? ' 🔒' : ''}</td>`;
 
         if (userData) {
             let hoverTimer = null;
@@ -998,8 +1091,12 @@ function updateEventList() {
             });
         }
 
-        tr.style.cursor = 'pointer';
+       tr.style.cursor = lockInfo ? 'not-allowed' : 'pointer';
         tr.onclick = () => {
+            if (lockInfo && lockInfo.operador !== (currentUser?.displayName || 'Anônimo')) {
+                alert(`Este evento está sendo atendido por:\n${lockInfo.operador}\n\nAguarde o atendimento ser finalizado.`);
+                return;
+            }
             if (item.group) openCloseModal(item.group, item.type);
             else selectClientFromEvent(ev);
         };
@@ -1304,6 +1401,21 @@ function connectWebSocket() {
             const raw = typeof event.data === 'string' ? event.data : '';
             const payloads = raw ? parseJsonStream(raw) : [JSON.parse(event.data)];
             payloads.forEach(data => {
+                // ========== NOVO: Processa notificações ==========
+                if (data.type === 'closure') {
+                    handleClosureNotification(data);
+                    return;
+                }
+                
+                if (data.type === 'event_locked') {
+                    handleEventLocked(data);
+                    return;
+                }
+                
+                if (data.type === 'event_unlocked') {
+                    handleEventUnlocked(data);
+                    return;
+              }
                 if (data.oper && Array.isArray(data.oper)) {
                     for (const op of data.oper) {
                         if (op.acao === 'evento') {
@@ -1433,27 +1545,25 @@ confirmCloseEvent.onclick = async () => {
         } catch (err) {
             console.error('❌ Registrar encerramento:', err);
             alert('Não foi possível registrar o encerramento no servidor. O evento permanece aberto.\n\nDetalhes: ' + err.message);
-            return; // não fecha modal nem remove da UI
+            return;
         }
 
+        // Remove localmente (a notificação WS vai sincronizar outros clientes)
         if (type === 'alarm') {
             activeAlarms.delete(group.first.local);
         } else {
             const key = `${group.first.local}-${group.first.codigoEvento}-${group.first.complemento}`;
             activePendentes.delete(key);
         }
+        
         updateCounts();
         updateEventList();
-        closeEventModal.style.display = 'none';
-        procedureText.value = '';
-        selectedPendingEvent = null;
+        closeEventUI.close();
     }
 };
 
 cancelCloseEvent.onclick = () => {
-    closeEventModal.style.display = 'none';
-    procedureText.value = '';
-    selectedPendingEvent = null;
+    closeEventUI.close();
 };
 
 togglePartitionsBtn.addEventListener('click', () => {
@@ -1488,6 +1598,59 @@ disarmAllButton.addEventListener('click', () => {
     if (partitions.length === 0) { alert('Nenhuma partição disponível'); return; }
     if (confirm(`Desarmar ${partitions.length} partição(ões)?`)) {
         desarmarParticoes(selectedEvent.idISEP, partitions);
+    }
+});
+
+function handleClosureNotification(data) {
+    const { isep, codigo, complemento } = data;
+    
+    console.log('🔔 Encerramento recebido:', { isep, codigo, complemento });
+    
+    // Remove de alarmes ativos
+    if (codigo === '1130') {
+        if (activeAlarms.has(isep)) {
+            console.log(`✅ Removendo alarme ${isep} da lista (encerrado por outro operador)`);
+            activeAlarms.delete(isep);
+        }
+    }
+    
+    // Remove de pendentes ativos
+    const key = `${isep}-${codigo}-${complemento || 0}`;
+    if (activePendentes.has(key)) {
+        console.log(`✅ Removendo pendente ${key} da lista (encerrado por outro operador)`);
+        activePendentes.delete(key);
+    }
+    
+    // Se estava com modal aberto para este evento, fecha
+    if (selectedPendingEvent) {
+        const ev = selectedPendingEvent.group?.first;
+        if (ev && ev.local === isep && ev.codigoEvento === codigo) {
+            alert('Este evento foi encerrado por outro operador.');
+            closeEventUI.close();
+        }
+    }
+    
+    updateCounts();
+    updateEventList();
+}
+
+function handleEventLocked(data) {
+    const { eventKey, operador } = data;
+    lockedEvents.set(eventKey, { operador, lockedAt: Date.now() });
+    console.log(`🔒 Evento ${eventKey} bloqueado por ${operador}`);
+    updateEventList();
+}
+
+function handleEventUnlocked(data) {
+    const { eventKey } = data;
+    lockedEvents.delete(eventKey);
+    console.log(`🔓 Evento ${eventKey} desbloqueado`);
+    updateEventList();
+}
+
+window.addEventListener('beforeunload', () => {
+    if (closeEventUI.currentEventKey) {
+        closeEventUI.releaseLock();
     }
 });
 

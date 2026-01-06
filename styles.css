@@ -201,3 +201,5 @@ button.small { padding:6px 12px; font-size:12px; }
 .auth-modal { display:none; }
 .auth-modal-content { max-width:420px; width:92%; gap:12px; }
 .auth-error { background:rgba(239,68,68,.12); color:#fecdd3; border:1px solid var(--danger); border-radius:6px; padding:8px 10px; font-size:12px; }
+.event-row.event-locked { opacity: 0.6; background: repeating-linear-gradient( 45deg, var(--bg-card), var(--bg-card) 10px, var(--bg-dark) 10px, var(--bg-dark) 20px ); cursor: not-allowed !important; }
+.event-row.event-locked:hover { opacity: 0.7; }

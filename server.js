@@ -8,6 +8,8 @@ const dbConfig = require('./db-config');
 const logsDbConfig = require('./logs-db-config');
 const { spawn } = require('child_process');
 const { LogsRepository } = require('./logs-repository');
+const eventLocks = new Map(); // key -> { operador, timestamp }
+const LOCK_TIMEOUT = 60000; // 60s sem keepalive = auto-release
 
 // Try to use structured logger, fallback to console if winston not available
 let logger;
@@ -195,7 +197,7 @@ app.use((req, res, next) => {
 		res.setHeader('Access-Control-Allow-Origin', origin || '*');
 	}
 	
-	res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 	res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 	
 	if (req.method === 'OPTIONS') {
@@ -281,16 +283,35 @@ app.post('/api/logs/close', async (req, res) => {
 	const codigo = event?.codigoEvento || event?.codigo || event?.code;
 	const isep = event?.isep || event?.local || event?.clientId;
 	const tipo = closure?.type;
-	console.log(event, closure);
+	
 	if (!closure || !tipo || !codigo || !isep) {
 		return res.status(400).json({
 			success: false,
-			error: 'Dados obrigatórios ausentes: codigoEvento/codigo, isep/local/clientId e type são obrigatórios'
+			error: 'Dados obrigatórios ausentes'
 		});
 	}
 
 	try {
 		await logsRepo.saveEventAndClosure(event, closure);
+		
+		// ========== NOVO: Notifica todos os clientes WebSocket ==========
+		const closureNotification = JSON.stringify({
+			type: 'closure',
+			isep,
+			codigo,
+			complemento: event?.complemento,
+			timestamp: Date.now(),
+			closedBy: closure?.user?.username
+		});
+		
+		wss.clients.forEach(client => {
+			if (client.readyState === WebSocket.OPEN) {
+				client.send(closureNotification);
+			}
+		});
+		
+		logger.info(`📢 Encerramento notificado: ${isep}-${codigo}`);
+		
 		return res.json({ success: true });
 	} catch (e) {
 		logger.error('❌ API /api/logs/close: ' + e.message);
@@ -310,6 +331,75 @@ app.get('/api/logs/events', async (req, res) => {
 		metrics.recordError();
 		return res.status(500).json({ success: false, error: 'Falha ao buscar eventos' });
 	}
+});
+
+app.post('/api/logs/lock', (req, res) => {
+	const { eventKey, operador } = req.body || {};
+	if (!eventKey || !operador) {
+		return res.status(400).json({ success: false, error: 'eventKey e operador são obrigatórios' });
+	}
+	
+	const existing = eventLocks.get(eventKey);
+	const now = Date.now();
+	
+	// Se já está locked por outro operador e não expirou, nega
+	if (existing && existing.operador !== operador && (now - existing.timestamp) < LOCK_TIMEOUT) {
+		return res.json({ 
+			success: false, 
+			locked: true, 
+			lockedBy: existing.operador 
+		});
+	}
+	
+	// Adquire/renova o lock
+	eventLocks.set(eventKey, { operador, timestamp: now });
+	
+	// Notifica outros clientes sobre o lock
+	const lockNotification = JSON.stringify({
+		type: 'event_locked',
+		eventKey,
+		operador
+	});
+	
+	wss.clients.forEach(client => {
+		if (client.readyState === WebSocket.OPEN) {
+			client.send(lockNotification);
+		}
+	});
+	
+	logger.info(`🔒 Lock adquirido: ${eventKey} por ${operador}`);
+	return res.json({ success: true, locked: true, lockedBy: operador });
+});
+
+app.post('/api/logs/unlock', (req, res) => {
+	const { eventKey, operador } = req.body || {};
+	if (!eventKey) {
+		return res.status(400).json({ success: false, error: 'eventKey é obrigatório' });
+	}
+	
+	const existing = eventLocks.get(eventKey);
+	
+	// Só desbloqueia se for o mesmo operador ou se expirou
+	if (existing && (existing.operador === operador || (Date.now() - existing.timestamp) >= LOCK_TIMEOUT)) {
+		eventLocks.delete(eventKey);
+		
+		// Notifica outros clientes sobre o unlock
+		const unlockNotification = JSON.stringify({
+			type: 'event_unlocked',
+			eventKey
+		});
+		
+		wss.clients.forEach(client => {
+			if (client.readyState === WebSocket.OPEN) {
+				client.send(unlockNotification);
+			}
+		});
+		
+		logger.info(`🔓 Lock liberado: ${eventKey}`);
+		return res.json({ success: true });
+	}
+	
+	return res.json({ success: false, error: 'Lock não pertence a este operador' });
 });
 
 app.use('/api', rateLimiter);
@@ -398,6 +488,28 @@ app.get('/api/metrics', (req, res) => {
 });
 
 app.use(express.static(__dirname));
+
+setInterval(() => {
+	const now = Date.now();
+	for (const [key, lock] of eventLocks.entries()) {
+		if (now - lock.timestamp >= LOCK_TIMEOUT) {
+			eventLocks.delete(key);
+			logger.info(`🔓 Lock expirado liberado: ${key}`);
+			
+			// Notifica clientes
+			const unlockNotification = JSON.stringify({
+				type: 'event_unlocked',
+				eventKey: key
+			});
+			
+			wss.clients.forEach(client => {
+				if (client.readyState === WebSocket.OPEN) {
+					client.send(unlockNotification);
+				}
+			});
+		}
+	}
+}, 60000);
 
 const httpServer = app.listen(HTTP_PORT, '0.0.0.0', () => {
 	logger.info(`\n🌐 Servidor HTTP rodando em:`);
