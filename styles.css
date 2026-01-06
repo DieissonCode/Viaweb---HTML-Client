@@ -122,7 +122,7 @@ hr { border:none; border-top:2px solid var(--border); margin:12px 0; }
 .event-row:hover { background:var(--bg-hover); }
 
 /* TIPOS DE EVENTOS */
-.alarm { background:rgba(127,29,29,.3); border-left:4px solid #ef4444; }
+.alarm { background:rgb(153, 33, 33); border-left:4px solid #ef4444; }
 .restauro { background:rgba(22,101,52,.3); border-left:4px solid #10b981; }
 .falha { background:rgba(124,45,18,.3); border-left:4px solid #f59e0b; }
 .armedisarm { background:rgba(30,58,138,.3); border-left:4px solid #3b82f6; }

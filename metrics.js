@@ -1,4 +1,4 @@
-// metrics.js - System health metrics tracking
+// metrics.js
 class MetricsCollector {
     constructor() {
         this.startTime = Date.now();

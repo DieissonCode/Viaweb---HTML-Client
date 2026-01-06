@@ -21,8 +21,7 @@ class HotReload {
         console.log('🔄 Hot Reload ativado');
         this.checkForUpdates();
         setInterval(() => this.checkForUpdates(), this.checkInterval);
-        
-        // Intercepta antes do unload para salvar estado
+
         window.addEventListener('beforeunload', () => this.saveState());
     }
 
@@ -52,7 +51,6 @@ class HotReload {
 
     saveState() {
         try {
-            // Salva estado atual no sessionStorage
             const state = {
                 allEvents: window.allEvents || [],
                 activeAlarms: Array.from(window.activeAlarms || new Map()),
@@ -78,7 +76,6 @@ class HotReload {
 
             const state = JSON.parse(saved);
 
-            // Aplica usuário logado primeiro
             if (state.currentUser) {
                 window.currentUser = state.currentUser;
                 if (window.authManager) {
@@ -86,22 +83,21 @@ class HotReload {
                     window.authManager.hide?.();
                 }
             }
-            
-            // Restaura variáveis globais - REPLACE instead of append to avoid duplication
+
             if (window.allEvents && state.allEvents) {
-                window.allEvents.length = 0; // Clear existing array
+                window.allEvents.length = 0;
                 window.allEvents.push(...state.allEvents);
             }
             
             if (window.activeAlarms && state.activeAlarms) {
-                window.activeAlarms.clear(); // Clear existing Map
+                window.activeAlarms.clear();
                 state.activeAlarms.forEach(([key, value]) => {
                     window.activeAlarms.set(key, value);
                 });
             }
             
             if (window.activePendentes && state.activePendentes) {
-                window.activePendentes.clear(); // Clear existing Map
+                window.activePendentes.clear();
                 state.activePendentes.forEach(([key, value]) => {
                     window.activePendentes.set(key, value);
                 });
@@ -114,8 +110,7 @@ class HotReload {
             if (state.selectedEvent) {
                 window.selectedEvent = state.selectedEvent;
             }
-            
-            // Restaura UI
+
             if (state.selectedUnit) {
                 const unitSelect = document.getElementById('unit-select');
                 if (unitSelect) {
@@ -123,7 +118,7 @@ class HotReload {
                     unitSelect.dispatchEvent(new Event('change'));
                 }
             }
-            
+
             if (state.autoUpdate) {
                 const autoUpdateCheck = document.getElementById('auto-update');
                 if (autoUpdateCheck) {
@@ -131,16 +126,14 @@ class HotReload {
                     autoUpdateCheck.dispatchEvent(new Event('change'));
                 }
             }
-            
-            // Atualiza contadores e lista de eventos
+
             if (window.updateCounts) window.updateCounts();
             if (window.updateEventList) window.updateEventList();
-            
+
             console.log('✅ Estado restaurado:', state.allEvents.length, 'eventos');
-            
-            // Limpa o estado salvo
+
             sessionStorage.removeItem('viawebState');
-            
+
             return true;
         } catch (err) {
             console.error('❌ Erro ao restaurar estado:', err);
@@ -151,21 +144,17 @@ class HotReload {
     async reload() {
         if (this.isReloading) return;
         this.isReloading = true;
-        
+
         console.log('🔄 Recarregando página...');
-        
-        // Salva estado antes de recarregar
+
         this.saveState();
-        
-        // Aguarda um pouco para garantir que salvou
+
         await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Recarrega a página
+
         window.location.reload();
     }
 }
 
-// Inicializa quando o DOM estiver pronto
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         window.hotReload = new HotReload();
@@ -174,10 +163,8 @@ if (document.readyState === 'loading') {
     window.hotReload = new HotReload();
 }
 
-// Tenta restaurar estado ao carregar
 window.addEventListener('load', () => {
     if (window.hotReload) {
-        // Aguarda main.js carregar
         setTimeout(() => {
             window.hotReload.restoreState();
         }, 500);

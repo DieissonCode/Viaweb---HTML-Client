@@ -1,4 +1,4 @@
-// logger.js - Structured logging for the application
+// logger.js
 const winston = require('winston');
 
 // Define log levels

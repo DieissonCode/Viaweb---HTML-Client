@@ -78,7 +78,6 @@ class LogsRepository {
         return eventId;
     }
 
-    // Busca EventId já existente para não duplicar ao fechar
     async findEventId(event) {
         const pool = await this.getPool();
         const codigo = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
@@ -177,10 +176,8 @@ class LogsRepository {
                 codigo, complemento, particao, local, isep, type, procedureText, userName, descricao, dataEventoStr
             });
 
-            // Tentar reaproveitar EventId já existente
             let eventId = await this.findEventId(event);
 
-            // Se não existir, insere evento dentro da transação
             if (!eventId) {
                 const sqlEvent = `
                     INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, RawEvent)
@@ -218,12 +215,12 @@ class LogsRepository {
                 logDebug('saveEventAndClosure - reused existing eventId', { eventId });
             }
 
-            // Closure
             const sqlClosure = `
                 INSERT INTO LOGS.Closures (EventId, ISEP, Codigo, Complemento, Particao, Descricao, DataEvento, Tipo, Procedimento, ClosedBy, ClosedByDisplay)
                 OUTPUT INSERTED.Id
                 VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
             `;
+
             logQuery('closure(tx)', sqlClosure, {
                 EventId: eventId,
                 ISEP: isep,
@@ -256,14 +253,12 @@ class LogsRepository {
             const closureId = clResult.recordset[0].Id;
             logDebug('saveEventAndClosure - closure inserted', { closureId });
 
-            // Marca o evento principal com o encerramento
             await new mssql.Request(tx)
                 .input('EventId', mssql.Int, eventId)
                 .input('ClosureId', mssql.Int, closureId)
                 .query(`UPDATE LOGS.Events SET ClosureId = @ClosureId WHERE Id = @EventId;`);
 
-            // Marca TODOS os eventos do mesmo ISEP, a partir do horário do disparo (inclusive)
-            await new mssql.Request(tx)
+            await new mssql.Request(tx) // Marca TODOS os eventos do mesmo ISEP, a partir do horário do disparo (inclusive)
                 .input('ClosureId', mssql.Int, closureId)
                 .input('ISEP', mssql.NVarChar(10), isep)
                 .input('DataEventoStr', mssql.NVarChar(30), dataEventoStr)

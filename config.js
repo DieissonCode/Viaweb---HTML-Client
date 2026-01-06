@@ -1,7 +1,7 @@
-﻿// config.js - Browser-compatible global module (no ESM)
+﻿// config.js
 (function() {
     'use strict';
-    
+
     const CHAVE = "94EF1C592113E8D27F5BB4C5D278BF3764292CEA895772198BA9435C8E9B97FD";
     const IV = "70FC01AA8FCA3900E384EA28A5B7BCEF";
     const partitionNames = {
@@ -14,7 +14,11 @@
         7: "AFC",
         8: "Casa"
     };
-    const armDisarmCodes = ["1401","1402","3401","3402","3403","3456"];
+    const armDisarmCodes = [
+        "1401","3401",
+        "1402","3402",
+        "1403","3403",
+        "3456"];
     const falhaCodes = ["1142","1143","1144","1300","1301","1302","1321","1333","1350","1351","1381","1382","1383","1384","1385","1386"];
     const sistemaCodes = falhaCodes.concat(["3142","3143","3144","3300","3301","3302","3321","3333","3351","3381","3382","3383","3384","3385","3386"]);
     const eventosDB = {
@@ -95,8 +99,7 @@
         "3AA6": "Alarme online",
         "1AA6": "Alarme offline"
     };
-    
-    // Expose to global scope
+
     window.ViawebConfig = {
         CHAVE,
         IV,

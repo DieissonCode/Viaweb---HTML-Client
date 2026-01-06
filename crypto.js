@@ -71,7 +71,6 @@
             return bytes;
         }
     }
-    
-    // Expose to global scope
+
     window.ViawebCrypto = ViawebCrypto;
 })();
