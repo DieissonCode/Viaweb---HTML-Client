@@ -37,6 +37,7 @@ body.light-mode .theme-toggle { background:var(--bg-card); }
 #unit-select-container { display:grid; grid-template-columns:auto 3fr 2fr; align-items:center; }
 label { font-weight:600; color:var(--text-secondary); font-size:13px; }
 input[type="text"], select { background:var(--bg-dark); border:2px solid var(--border); color:var(--text-primary); padding:8px 10px; border-radius:6px; font-size:13px; transition:.3s; }
+input[type="password"], select { background:var(--bg-dark); border:2px solid var(--border); color:var(--text-primary); padding:8px 10px; border-radius:6px; font-size:13px; transition:.3s; }
 input[type="text"]:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
 
 /* CLIENTE */
@@ -162,7 +163,7 @@ hr { border:none; border-top:2px solid var(--border); margin:12px 0; }
 .history-table td.meta { color:var(--text-secondary); }
 
 /* RODAPÉ DO MODAL */
-.modal-footer { margin-top:auto; display:flex; gap:10px; justify-content:flex-end; border-top:1px solid var(--border); padding-top:10px; }
+.modal-footer { margin-top:auto; display:flex; gap:10px; justify-content:flex-end; padding-top:10px; }
 button.ghost { background:var(--bg-dark); color:var(--text-primary); }
 button.ghost:hover { background:var(--border); }
 
