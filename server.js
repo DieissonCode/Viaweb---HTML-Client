@@ -299,6 +299,19 @@ app.post('/api/logs/close', async (req, res) => {
 	}
 });
 
+// NOVO: histórico recente para hidratar o front após reload
+app.get('/api/logs/events', async (req, res) => {
+	const limit = Number(req.query.limit) || 300;
+	try {
+		const rows = await logsRepo.getRecentEvents(limit);
+		return res.json({ success: true, data: rows });
+	} catch (e) {
+		logger.error('❌ API /api/logs/events: ' + e.message);
+		metrics.recordError();
+		return res.status(500).json({ success: false, error: 'Falha ao buscar eventos' });
+	}
+});
+
 app.use('/api', rateLimiter);
 
 app.get('/api/units', async (req, res) => {

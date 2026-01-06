@@ -1,4 +1,4 @@
-﻿const mssql = require('mssql');
+﻿﻿const mssql = require('mssql');
 
 function normalizeText(val) {
     return (val === null || val === undefined) ? '' : String(val);
@@ -46,7 +46,7 @@ class LogsRepository {
         const codigo = normalizeText(event.codigoEvento || event.codigo || event.code);
         const complemento = normalizeText(event.complemento);
         const particao = normalizeText(event.particao);
-        const local = normalizeText(event.local);
+        const local = normalizeText(event.local || event.isep || event.clientId);
         const isep = normalizeText(event.isep || event.local || event.clientId);
         const descricao = normalizeText(event.descricao);
         const dataEventoDate = event.timestamp ? toDateGmt3(event.timestamp) : new Date();
@@ -278,6 +278,23 @@ class LogsRepository {
             logDebug('saveEventAndClosure - rolled back', { error: err.message });
             throw err;
         }
+    }
+
+    // NOVO: busca últimos eventos para hidratar o front após reload
+    async getRecentEvents(limit = 300) {
+        const pool = await this.getPool();
+        const safeLimit = Math.max(1, Math.min(Number(limit) || 300, 1000));
+        const sql = `
+            SELECT TOP (@Limit)
+                   Id, Codigo, CodigoEvento, Complemento, Particao, Local, ISEP,
+                   Descricao, DataEvento, RawEvent, DataHora, ClosureId
+            FROM LOGS.Events
+            ORDER BY DataHora DESC, Id DESC;
+        `;
+        const result = await pool.request()
+            .input('Limit', mssql.Int, safeLimit)
+            .query(sql);
+        return result.recordset || [];
     }
 }
 

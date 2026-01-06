@@ -75,6 +75,9 @@ class HotReload {
             if (!saved) return false;
 
             const state = JSON.parse(saved);
+            const hasEvents = Array.isArray(state.allEvents) && state.allEvents.length > 0;
+            const hasAlarms = Array.isArray(state.activeAlarms) && state.activeAlarms.length > 0;
+            const hasPend = Array.isArray(state.activePendentes) && state.activePendentes.length > 0;
 
             if (state.currentUser) {
                 window.currentUser = state.currentUser;
@@ -84,19 +87,20 @@ class HotReload {
                 }
             }
 
-            if (window.allEvents && state.allEvents) {
+            // Só restaura coleções se vierem com dados
+            if (hasEvents && window.allEvents) {
                 window.allEvents.length = 0;
                 window.allEvents.push(...state.allEvents);
             }
             
-            if (window.activeAlarms && state.activeAlarms) {
+            if (hasAlarms && window.activeAlarms) {
                 window.activeAlarms.clear();
                 state.activeAlarms.forEach(([key, value]) => {
                     window.activeAlarms.set(key, value);
                 });
             }
             
-            if (window.activePendentes && state.activePendentes) {
+            if (hasPend && window.activePendentes) {
                 window.activePendentes.clear();
                 state.activePendentes.forEach(([key, value]) => {
                     window.activePendentes.set(key, value);
@@ -130,7 +134,7 @@ class HotReload {
             if (window.updateCounts) window.updateCounts();
             if (window.updateEventList) window.updateEventList();
 
-            console.log('✅ Estado restaurado:', state.allEvents.length, 'eventos');
+            console.log('✅ Estado restaurado:', (window.allEvents?.length || 0), 'eventos');
 
             sessionStorage.removeItem('viawebState');
 

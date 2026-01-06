@@ -429,6 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.authManager = authManager; // expõe para hot-reload
 });
 
+// ---------- Índices e ingestão de eventos normalizados ----------
 function updateSearchIndices(event) {
     if (!eventsByLocal.has(event.local)) eventsByLocal.set(event.local, []);
     eventsByLocal.get(event.local).push(event);
@@ -438,6 +439,224 @@ function updateSearchIndices(event) {
     if (eventsByCode.get(event.codigoEvento).length > maxEvents) eventsByCode.get(event.codigoEvento).shift();
 }
 
+function ingestNormalizedEvent(ev) {
+    allEvents.push(ev);
+    updateSearchIndices(ev);
+
+    if (allEvents.length > maxEvents) {
+        const removed = allEvents.shift();
+        const localEvents = eventsByLocal.get(removed.local);
+        if (localEvents) {
+            const idx = localEvents.indexOf(removed);
+            if (idx > -1) localEvents.splice(idx, 1);
+        }
+        const codeEvents = eventsByCode.get(removed.codigoEvento);
+        if (codeEvents) {
+            const idx = codeEvents.indexOf(removed);
+            if (idx > -1) codeEvents.splice(idx, 1);
+        }
+    }
+
+    if (ev.codigoEvento === '1130') {
+        const key = ev.local;
+        if (!activeAlarms.has(key)) {
+            activeAlarms.set(key, { first: ev, events: [] });
+        } else {
+            activeAlarms.get(key).events.push(ev);
+        }
+    }
+
+    const isFalha = falhaCodes.includes(ev.codigoEvento);
+    const isRestauro = ev.codigoEvento.startsWith('3') && sistemaCodes.includes(ev.codigoEvento);
+
+    if (isFalha || isRestauro) {
+        const zona = ev.complemento && ev.complemento !== '-' ? ev.complemento : 0;
+        const key = `${ev.local}-${ev.codigoEvento}-${zona}`;
+        if (isFalha) {
+            if (!activePendentes.has(key)) activePendentes.set(key, { first: ev, events: [], resolved: false });
+            activePendentes.get(key).events.push(ev);
+        }
+        if (isRestauro) {
+            const falhaCod = ev.codigoEvento.replace(/^3/, '1');
+            const falhaKey = `${ev.local}-${falhaCod}-${zona}`;
+            if (activePendentes.has(falhaKey)) activePendentes.get(falhaKey).resolved = true;
+        }
+    }
+}
+
+// ---------- Normalização de evento recebido em tempo real ----------
+function processEvent(data) {
+    const msg = data.oper?.[0] || data;
+    const cod = msg.codigoEvento || 'N/A';
+    if (cod === "1412") return;
+
+    let id = (msg.id || '').replace(/-(evento|evento-)/g, '');
+    const zonaUsuario = msg.zonaUsuario || 0;
+    const part = msg.particao || 1;
+    const local = msg.isep || 'N/A';
+    const clientId = msg.isep || msg.contaCliente || currentClientId;
+    let ts = msg.recepcao || Date.now();
+    if (ts < 10000000000) ts *= 1000;
+
+    const d = new Date(ts);
+    const dia = d.getDate().toString().padStart(2,'0');
+    const mes = (d.getMonth()+1).toString().padStart(2,'0');
+    const ano = d.getFullYear();
+    const hora = d.getHours().toString().padStart(2,'0');
+    const min = d.getMinutes().toString().padStart(2,'0');
+    const seg = d.getSeconds().toString().padStart(2,'0');
+
+    let desc = eventosDB[cod] || `Evento ${cod}`;
+    if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
+
+    const isArmDisarm = armDisarmCodes.includes(cod);
+    if (zonaUsuario > 0) desc += ` - ${isArmDisarm ? '' : 'Sensor ' + zonaUsuario}`;
+
+    let extraClass = '';
+    if (cod === '1570') extraClass = 'inibida';
+
+    // ----- Monta descrição com usuário (se arm/disarm) sem mutar depois -----
+    const baseDescricao = desc;
+    let displayDesc = baseDescricao;
+    let userData = null;
+    let userName = null;
+    let userId = null;
+    let userMatricula = null;
+
+    if (isArmDisarm && zonaUsuario > 0 && window.UsersDB) {
+        const tipos = {
+            0: '[Horário Programado]',
+            1: '[Monitoramento]',
+            2: '[Facilitador]',
+            3: '[Senha de Uso Único]',
+            4: '[Senha de Uso Único]',
+            5: '[Senha de Uso Único]',
+            6: '[TI - Manutenção]'
+        };
+
+        if (tipos[zonaUsuario]) {
+            displayDesc += tipos[zonaUsuario];
+        } else {
+            displayDesc += `Usuário Não Cadastrado | ${zonaUsuario}`;
+        }
+
+        const usersByIsep = window.UsersDB.getUsersByIsep(String(local)) || [];
+        userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
+
+        if (userData && !tipos[zonaUsuario]) {
+            userName = window.UsersDB.formatUserName(userData);
+            userId = userData.ID_USUARIO || null;
+            userMatricula = userData.matricula || null;
+            displayDesc = `${baseDescricao}${userName}`;
+        }
+    }
+
+    const ev = {
+        id,
+        local,
+        data: `${dia}/${mes}/${ano}`,
+        hora: `${hora}:${min}:${seg}`,
+        complemento: zonaUsuario > 0 ? zonaUsuario : '-',
+        particao: part,
+        baseDescricao,
+        descricao: displayDesc,
+        codigoEvento: cod,
+        clientId,
+        timestamp: ts,
+        extraClass,
+        userId,
+        userMatricula,
+        userName
+    };
+
+    ingestNormalizedEvent(ev);
+    updateEventList();
+
+    // Envia para logs com os metadados de usuário
+    fetch('/api/logs/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ev)
+    }).catch(() => {});
+
+    updateCounts();
+}
+
+// ---------- Hidratação a partir do banco ----------
+function hydrateEventFromDbRow(row) {
+    let raw = {};
+    try {
+        raw = row.RawEvent ? JSON.parse(row.RawEvent) : {};
+    } catch (_) {
+        raw = {};
+    }
+    const codigo = row.CodigoEvento || row.Codigo || raw.codigoEvento || raw.codigo || 'N/A';
+    const timestamp = row.DataEvento ? new Date(row.DataEvento).getTime() : (raw.timestamp || Date.now());
+    const d = new Date(timestamp);
+    const dia = d.getDate().toString().padStart(2,'0');
+    const mes = (d.getMonth()+1).toString().padStart(2,'0');
+    const ano = d.getFullYear();
+    const hora = d.getHours().toString().padStart(2,'0');
+    const min = d.getMinutes().toString().padStart(2,'0');
+    const seg = d.getSeconds().toString().padStart(2,'0');
+
+    const complemento = row.Complemento ?? raw.complemento ?? '-';
+    const local = row.ISEP || row.Local || raw.local || raw.isep || raw.clientId || 'N/A';
+    const particao = row.Particao || raw.particao || 1;
+
+    const baseDesc = raw.baseDescricao || row.Descricao || eventosDB[codigo] || `Evento ${codigo}`;
+    const userName = raw.userName || null;
+    const userId = raw.userId || null;
+    const userMatricula = raw.userMatricula || null;
+
+    return {
+        id: row.Id || raw.id || '',
+        local,
+        data: `${dia}/${mes}/${ano}`,
+        hora: `${hora}:${min}:${seg}`,
+        complemento: complemento === '' ? '-' : complemento,
+        particao,
+        baseDescricao: baseDesc,
+        descricao: raw.descricao || baseDesc,
+        codigoEvento: codigo,
+        clientId: local,
+        timestamp,
+        extraClass: raw.extraClass || '',
+        userId,
+        userMatricula,
+        userName
+    };
+}
+
+async function loadInitialHistory(limit = 300) {
+    try {
+        const resp = await fetch(`/api/logs/events?limit=${limit}`);
+        const data = await resp.json();
+        if (!data.success || !Array.isArray(data.data)) {
+            console.warn('⚠️ Histórico não carregado: resposta inválida');
+            return;
+        }
+
+        // Limpa estruturas antes de hidratar
+        allEvents = [];
+        activeAlarms = new Map();
+        activePendentes = new Map();
+        eventsByLocal = new Map();
+        eventsByCode = new Map();
+
+        const rows = data.data;
+        // Processa em ordem cronológica (mais antigos primeiro)
+        const ordered = [...rows].reverse().map(hydrateEventFromDbRow);
+        ordered.forEach(ev => ingestNormalizedEvent(ev));
+
+        updateEventList();
+        updateCounts();
+    } catch (err) {
+        console.error('❌ Erro ao carregar histórico inicial:', err);
+    }
+}
+
+// ---------- Funções auxiliares já existentes ----------
 function generateCommandId() {
     const timestamp = Date.now();
     commandIdCounter = (commandIdCounter + 1) % COMMAND_ID_MOD;
@@ -460,6 +679,11 @@ function isValidISEP(idISEP) {
     try { users = await window.UsersDB.getUsers(); }
     catch (err) { console.error('❌ Erro ao carregar usuários:', err); }
 })();
+
+// Carrega histórico inicial ao abrir a página
+document.addEventListener('DOMContentLoaded', () => {
+    loadInitialHistory(300);
+});
 
 const themeToggle = document.getElementById('theme-toggle');
 const savedTheme = localStorage.getItem('theme');
@@ -589,146 +813,7 @@ function updateZones(data) {
     });
 }
 
-function processEvent(data) {
-    const msg = data.oper?.[0] || data;
-    const cod = msg.codigoEvento || 'N/A';
-    if (cod === "1412") return;
-
-    let id = (msg.id || '').replace(/-(evento|evento-)/g, '');
-    const zonaUsuario = msg.zonaUsuario || 0;
-    const part = msg.particao || 1;
-    const local = msg.isep || 'N/A';
-    const clientId = msg.isep || msg.contaCliente || currentClientId;
-    let ts = msg.recepcao || Date.now();
-    if (ts < 10000000000) ts *= 1000;
-
-    const d = new Date(ts);
-    const dia = d.getDate().toString().padStart(2,'0');
-    const mes = (d.getMonth()+1).toString().padStart(2,'0');
-    const ano = d.getFullYear();
-    const hora = d.getHours().toString().padStart(2,'0');
-    const min = d.getMinutes().toString().padStart(2,'0');
-    const seg = d.getSeconds().toString().padStart(2,'0');
-
-    let desc = eventosDB[cod] || `Evento ${cod}`;
-    if (desc.includes('{zona}')) desc = desc.replace('{zona}', zonaUsuario);
-
-    const isArmDisarm = armDisarmCodes.includes(cod);
-    if (zonaUsuario > 0) desc += ` - ${isArmDisarm ? '' : 'Sensor ' + zonaUsuario}`;
-
-    let extraClass = '';
-    if (cod === '1570') extraClass = 'inibida';
-
-    // ----- Monta descrição com usuário (se arm/disarm) sem mutar depois -----
-    const baseDescricao = desc;
-    let displayDesc = baseDescricao;
-    let userData = null;
-    let userName = null;
-    let userId = null;
-    let userMatricula = null;
-
-    if (isArmDisarm && zonaUsuario > 0 && window.UsersDB) {
-        const tipos = {
-            0: '[Horário Programado]',
-            1: '[Monitoramento]',
-            2: '[Facilitador]',
-            3: '[Senha de Uso Único]',
-            4: '[Senha de Uso Único]',
-            5: '[Senha de Uso Único]',
-            6: '[TI - Manutenção]'
-        };
-
-        if (tipos[zonaUsuario]) {
-            displayDesc += tipos[zonaUsuario];
-        } else {
-            displayDesc += `Usuário Não Cadastrado | ${zonaUsuario}`;
-        }
-
-        const usersByIsep = window.UsersDB.getUsersByIsep(String(local)) || [];
-        userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
-
-        if (userData && !tipos[zonaUsuario]) {
-            userName = window.UsersDB.formatUserName(userData);
-            userId = userData.ID_USUARIO || null;
-            userMatricula = userData.matricula || null;
-            displayDesc = `${baseDescricao}${userName}`;
-        }
-    }
-
-    const ev = {
-        id,
-        local,
-        data: `${dia}/${mes}/${ano}`,
-        hora: `${hora}:${min}:${seg}`,
-        complemento: zonaUsuario > 0 ? zonaUsuario : '-',
-        particao: part,
-        baseDescricao,
-        descricao: displayDesc,
-        codigoEvento: cod,
-        clientId,
-        timestamp: ts,
-        extraClass,
-        userId,
-        userMatricula,
-        userName
-    };
-
-    allEvents.push(ev);
-    updateSearchIndices(ev);
-
-    if (allEvents.length > maxEvents) {
-        const removed = allEvents.shift();
-        const localEvents = eventsByLocal.get(removed.local);
-        if (localEvents) {
-            const idx = localEvents.indexOf(removed);
-            if (idx > -1) localEvents.splice(idx, 1);
-        }
-        const codeEvents = eventsByCode.get(removed.codigoEvento);
-        if (codeEvents) {
-            const idx = codeEvents.indexOf(removed);
-            if (idx > -1) codeEvents.splice(idx, 1);
-        }
-    }
-
-    // Agrupa disparos por ISEP sem duplicar o primeiro
-    if (cod === '1130') {
-        const key = local;
-        if (!activeAlarms.has(key)) {
-            activeAlarms.set(key, { first: ev, events: [] });
-        } else {
-            activeAlarms.get(key).events.push(ev);
-        }
-    }
-
-    const isFalha = falhaCodes.includes(cod);
-    const isRestauro = cod.startsWith('3') && sistemaCodes.includes(cod);
-
-    if (isFalha || isRestauro) {
-        const zona = zonaUsuario || 0;
-        const key = `${local}-${cod}-${zona}`;
-        if (isFalha) {
-            if (!activePendentes.has(key)) activePendentes.set(key, { first: ev, events: [], resolved: false });
-            activePendentes.get(key).events.push(ev);
-        }
-        if (isRestauro) {
-            const falhaCod = cod.replace(/^3/, '1');
-            const falhaKey = `${local}-${falhaCod}-${zona}`;
-            if (activePendentes.has(falhaKey)) activePendentes.get(falhaKey).resolved = true;
-        }
-    }
-
-    updateEventList();
-
-    // Envia para logs com os metadados de usuário
-    fetch('/api/logs/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ev)
-    }).catch(() => {});
-
-    updateCounts();
-}
-
+// ---------- Contadores ----------
 function updateCounts() {
     if (alarmCount) alarmCount.textContent = activeAlarms.size; // Disparos distintos por ISEP
     if (pendCount) pendCount.textContent = Array.from(activePendentes.values()).filter(g => !g.resolved).length;
@@ -737,6 +822,7 @@ function updateCounts() {
 window.updateCounts = updateCounts;
 
 
+// ---------- Filtro ----------
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
     const lowerTerm = term.toLowerCase();
@@ -756,6 +842,7 @@ function filterEvents(term) {
     });
 }
 
+// ---------- Render de lista ----------
 function updateEventList() {
     const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
     const filterTerm = eventsFilter.value.toLowerCase();
@@ -863,6 +950,7 @@ function updateEventList() {
     }
 }
 
+// ---------- Modal e tooltip ----------
 function openCloseModal(group, type) {
     closeEventUI.open(group, type);
 }
@@ -886,6 +974,7 @@ function hideTooltip() {
     currentTooltip = null;
 }
 
+// ---------- Seleção de cliente ----------
 function selectClientFromEvent(ev) {
     if (!currentUser) {
         authManager?.show?.();
@@ -908,6 +997,7 @@ function selectClientFromEvent(ev) {
     }
 }
 
+// ---------- Envio de comandos ----------
 function sendCommand(data) {
     if (!currentUser) {
         console.warn('❌ Comando bloqueado: usuário não autenticado');
