@@ -27,11 +27,11 @@ function normalizeText(val) {
     return (val === null || val === undefined) ? '' : String(val);
 }
 
-// Converte timestamp (ms) para Date ajustada em GMT-3
+// Converte timestamp (ms) para Date ajustada em GMT
 function toDateGmt3(rawTs) {
     if (rawTs === null || rawTs === undefined || Number.isNaN(Number(rawTs))) return new Date();
     const ms = Number(rawTs);
-    return new Date(ms - 3 * 60 * 60 * 1000);
+    return new Date(ms * 60 * 60 * 1000);
 }
 
 // Formata Date em string SQL-safe (yyyy-MM-dd HH:mm:ss.SSS)
