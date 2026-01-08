@@ -91,7 +91,14 @@ class LogsRepository {
         let descricao = normalizeText(event.descricao);
         descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
 
-        const normalizedEvent = { ...event, complemento };
+        // ✅ PRESERVA CAMPOS DE USUÁRIO NO RAW EVENT
+        const normalizedEvent = { 
+            ...event, 
+            complemento,
+            userName: event.userName || null,
+            userId: event.userId || null,
+            userMatricula: event.userMatricula || null
+        };
         const rawEvent = JSON.stringify(normalizedEvent || {});
 
         // Dedup em memória (sem consulta ao BD)
@@ -217,8 +224,17 @@ class LogsRepository {
             const isep = normalizeText(event?.isep || event?.local || event?.clientId);
             let descricao = normalizeText(event?.descricao);
             descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
-            const normalizedEvent = { ...event, complemento };
+            
+            // ✅ PRESERVA CAMPOS DE USUÁRIO NO RAW EVENT
+            const normalizedEvent = { 
+                ...event, 
+                complemento,
+                userName: event.userName || null,
+                userId: event.userId || null,
+                userMatricula: event.userMatricula || null
+            };
             const rawEvent = JSON.stringify(normalizedEvent || {});
+            
             const type = normalizeText(closure?.type);
             const procedureText = normalizeText(closure?.procedureText);
             const userName = normalizeText(closure?.user?.displayName || closure?.user?.username);
@@ -319,8 +335,8 @@ class LogsRepository {
                     UPDATE LOGS.Events
                     SET ClosureId = @ClosureId
                     WHERE ClosureId IS NULL
-                      AND ISEP = @ISEP
-                      AND DataEvento >= CONVERT(datetime2, @DataEventoStr, 120);
+                    AND ISEP = @ISEP
+                    AND DataEvento >= CONVERT(datetime2, @DataEventoStr, 120);
                 `);
 
             await tx.commit();
