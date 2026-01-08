@@ -27,15 +27,39 @@ function normalizeText(val) {
     return (val === null || val === undefined) ? '' : String(val);
 }
 
-// Converte timestamp (ms) para Date ajustada em GMT
+// ✅ CORRIGIDO: Converte timestamp para Date
 function toDateGmt3(rawTs) {
-    if (rawTs === null || rawTs === undefined || Number.isNaN(Number(rawTs))) return new Date();
-    const ms = Number(rawTs);
-    return new Date(ms * 60 * 60 * 1000);
+    // Se for null/undefined, retorna agora
+    if (rawTs === null || rawTs === undefined) {
+        return new Date();
+    }
+
+    // Tenta converter para número
+    const num = Number(rawTs);
+    
+    // Se não é um número válido, retorna agora
+    if (Number.isNaN(num) || !Number.isFinite(num)) {
+        console.warn('[logs-repo] ⚠️ Timestamp inválido recebido:', rawTs, '- usando Date.now()');
+        return new Date();
+    }
+
+    // Se é muito pequeno (provavelmente em segundos), converte para ms
+    if (num < 10000000000) {
+        return new Date(num * 1000);
+    }
+
+    // Já está em ms
+    return new Date(num);
 }
 
 // Formata Date em string SQL-safe (yyyy-MM-dd HH:mm:ss.SSS)
 function formatDateTimeSql(dateObj) {
+    // Valida se é uma data válida
+    if (!dateObj || !(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
+        console.warn('[logs-repo] ⚠️ Date inválido recebido:', dateObj, '- usando Date.now()');
+        dateObj = new Date();
+    }
+
     const pad = (n, w = 2) => String(n).padStart(w, '0');
     const y = dateObj.getFullYear();
     const m = pad(dateObj.getMonth() + 1);
@@ -85,7 +109,7 @@ class LogsRepository {
         const particao = normalizeText(event.particao);
         const local = normalizeText(event.local || event.isep || event.clientId);
         const isep = normalizeText(event.isep || event.local || event.clientId);
-        const dataEventoDate = event.timestamp ? toDateGmt3(event.timestamp) : new Date();
+        const dataEventoDate = toDateGmt3(event.timestamp);
         const dataEventoStr = formatDateTimeSql(dataEventoDate);
 
         let descricao = normalizeText(event.descricao);
@@ -115,7 +139,7 @@ class LogsRepository {
             OUTPUT INSERTED.Id
             VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @RawEvent);
         `;
-        const params = { Codigo: codigo, CodigoEvento: codigo, Complemento: complemento, Particao: particao, Local: local, ISEP: isep, Descricao: descricao, DataEventoStr: dataEventoStr, RawEvent: normalizedEvent };
+        const params = { Codigo: codigo, CodigoEvento: codigo, Complemento: complemento, Particao: particao, Local: local, ISEP: isep, Descricao: descricao, DataEventoStr: dataEventoStr, RawEvent: rawEvent };
         logQuery('event(incoming)', sql, params);
 
         const result = await pool.request()
@@ -141,7 +165,10 @@ class LogsRepository {
         const complemento = normalizeComplemento(event?.complemento);
         const particao = normalizeText(event?.particao);
         const isep = normalizeText(event?.isep || event?.local || event?.clientId);
-        const dataEventoStr = event?.timestamp ? formatDateTimeSql(toDateGmt3(event.timestamp)) : null;
+        
+        // ✅ CORRIGIDO: Valida timestamp antes de usar
+        const timestamp = event?.timestamp;
+        const dataEventoStr = timestamp ? formatDateTimeSql(toDateGmt3(timestamp)) : null;
 
         const sql = `
             SELECT TOP 1 Id
@@ -153,7 +180,9 @@ class LogsRepository {
               ${dataEventoStr ? 'AND ABS(DATEDIFF(SECOND, DataEvento, CONVERT(datetime2, @DataEventoStr, 120))) <= 60' : ''}
             ORDER BY DataHora DESC;
         `;
-        const params = { Codigo: codigo, ISEP: isep, Complemento: complemento, Particao: particao, DataEventoStr: dataEventoStr };
+        const params = { Codigo: codigo, ISEP: isep, Complemento: complemento, Particao: particao };
+        if (dataEventoStr) params.DataEventoStr = dataEventoStr;
+        
         logQuery('findEventId', sql, params);
 
         const request = pool.request()
@@ -169,6 +198,11 @@ class LogsRepository {
 
     async saveClosure(eventId, closure, isepFromEvent, codigoFromEvent, extra) {
         const pool = await this.getPool();
+        
+        // ✅ CORRIGIDO: Valida data do evento
+        const dataEventoDate = extra?.timestamp ? toDateGmt3(extra.timestamp) : new Date();
+        const dataEventoStr = formatDateTimeSql(dataEventoDate);
+        
         const payload = {
             EventId: eventId,
             ISEP: normalizeText(isepFromEvent),
@@ -176,7 +210,7 @@ class LogsRepository {
             Complemento: normalizeComplemento(extra?.complemento),
             Particao: normalizeText(extra?.particao),
             Descricao: normalizeText(extra?.descricao),
-            DataEventoStr: extra?.dataEventoStr || (extra?.dataEvento ? formatDateTimeSql(extra.dataEvento) : null),
+            DataEventoStr: dataEventoStr,
             Tipo: normalizeText(closure.type),
             Procedimento: normalizeText(closure.procedureText),
             ClosedBy: normalizeText(closure.user?.username),
@@ -225,21 +259,24 @@ class LogsRepository {
             let descricao = normalizeText(event?.descricao);
             descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
             
+            // ✅ CORRIGIDO: Valida timestamp
+            const dataEventoDate = toDateGmt3(event?.timestamp);
+            const dataEventoStr = formatDateTimeSql(dataEventoDate);
+            
             // ✅ PRESERVA CAMPOS DE USUÁRIO NO RAW EVENT
             const normalizedEvent = { 
                 ...event, 
                 complemento,
                 userName: event.userName || null,
                 userId: event.userId || null,
-                userMatricula: event.userMatricula || null
+                userMatricula: event.userMatricula || null,
+                timestamp: dataEventoDate.getTime() // Garante timestamp válido
             };
             const rawEvent = JSON.stringify(normalizedEvent || {});
             
             const type = normalizeText(closure?.type);
             const procedureText = normalizeText(closure?.procedureText);
             const userName = normalizeText(closure?.user?.displayName || closure?.user?.username);
-            const dataEventoDate = event?.timestamp ? toDateGmt3(event.timestamp) : new Date();
-            const dataEventoStr = formatDateTimeSql(dataEventoDate);
 
             logDebug('saveEventAndClosure - normalized inputs', {
                 codigo, complemento, particao, local, isep, type, procedureText, userName, descricao, dataEventoStr
@@ -262,7 +299,7 @@ class LogsRepository {
                     ISEP: isep,
                     Descricao: descricao,
                     DataEventoStr: dataEventoStr,
-                    RawEvent: normalizedEvent
+                    RawEvent: rawEvent
                 });
 
                 const reqEvent = new mssql.Request(tx);

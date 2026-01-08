@@ -1526,16 +1526,43 @@ eventsFilter.addEventListener('input', () => updateEventList());
 async function logClosureToServer(group, type, procedureText) {
     const ev = group?.first || {};
     const codigo = ev.codigoEvento || ev.codigo || ev.code || '';
+    
+    // ✅ CORRIGIDO: Garante timestamp válido
+    let timestamp = ev.timestamp;
+    if (!timestamp || timestamp === null || timestamp === undefined || isNaN(Number(timestamp))) {
+        console.warn('⚠️ Timestamp inválido no evento:', {
+            timestampRecebido: timestamp,
+            eventoCompleto: ev
+        });
+        timestamp = Date.now();
+    }
+    
+    // Converte para número e valida
+    timestamp = Number(timestamp);
+    if (isNaN(timestamp) || !isFinite(timestamp) || timestamp <= 0) {
+        console.warn('⚠️ Timestamp não conversível, usando Date.now()');
+        timestamp = Date.now();
+    }
+    
+    console.log('📤 Enviando encerramento:', {
+        codigo,
+        isep: ev.local || ev.isep,
+        complemento: ev.complemento,
+        timestamp,
+        timestampFormatado: new Date(timestamp).toLocaleString()
+    });
+    
     const payload = {
         event: {
             codigoEvento: codigo,
             codigo,
             complemento: ev.complemento ?? '',
-            particao: ev.particao ?? '',
+            particao: ev.particao ?? '1',
             local: ev.local ?? '',
+            isep: ev.local || ev.isep || ev.clientId || '',
             clientId: ev.clientId ?? '',
             descricao: ev.descricao ?? '',
-            timestamp: ev.timestamp ?? Date.now()
+            timestamp: timestamp // Garante número válido
         },
         closure: {
             type,
@@ -1549,12 +1576,20 @@ async function logClosureToServer(group, type, procedureText) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
+    
     const text = await resp.text();
     let data = {};
-    try { data = JSON.parse(text); } catch (_) {}
+    try { 
+        data = JSON.parse(text); 
+    } catch (_) {
+        console.error('❌ Resposta não é JSON válido:', text);
+    }
+    
     if (!resp.ok || data.success === false) {
         throw new Error(data.error || text || 'Falha ao salvar encerramento');
     }
+    
+    console.log('✅ Encerramento salvo com sucesso');
 }
 
 // Handler de encerramento
