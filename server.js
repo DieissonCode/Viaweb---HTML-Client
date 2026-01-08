@@ -706,15 +706,33 @@ wss.on('connection', (ws) => {
 			}
 		});
 
-		globalTcpClient. on('data', async (data) => {
+		globalTcpClient.on('data', async (data) => {
 			try {
-				const decrypted = decrypt(data, globalKeyBuffer, globalIvRecv);
-				globalIvRecv = data.slice(-16);
+				// ========== CORREÇÃO: Acumula dados até ter blocos completos ==========
+				tcpRecvBuffer = Buffer.concat([tcpRecvBuffer, data]);
+				
+				// Processa apenas se temos múltiplos de 16 bytes
+				const blockSize = 16;
+				const completeBlocksLength = Math.floor(tcpRecvBuffer.length / blockSize) * blockSize;
+				
+				if (completeBlocksLength === 0) {
+					logger.debug(`⏳ Buffer acumulando: ${tcpRecvBuffer.length} bytes (aguardando múltiplo de 16)`);
+					return; // Aguarda mais dados
+				}
+				
+				// Separa blocos completos do restante
+				const dataToDecrypt = tcpRecvBuffer.slice(0, completeBlocksLength);
+				tcpRecvBuffer = tcpRecvBuffer.slice(completeBlocksLength);
+				
+				logger.debug(`🔓 Descriptografando ${dataToDecrypt.length} bytes (${tcpRecvBuffer.length} bytes no buffer)`);
+				
+				const decrypted = decrypt(dataToDecrypt, globalKeyBuffer, globalIvRecv);
+				globalIvRecv = dataToDecrypt.slice(-16);
 				
 				const jsonStr = decrypted.toString('utf8').replace(/\x00/g, '').trim();
-				if (! jsonStr) return;
+				if (!jsonStr) return;
 				
-				logger.debug('📥 TCP recebido:  ' + jsonStr. substring(0, 200));
+				logger.debug('📥 TCP recebido: ' + jsonStr.substring(0, 200));
 				
 				let shouldForwardToClients = true;
 				
@@ -722,11 +740,11 @@ wss.on('connection', (ws) => {
 					const parsed = JSON.parse(jsonStr);
 					if (parsed.oper && Array.isArray(parsed.oper)) {
 						for (const op of parsed.oper) {
-							if (op. acao === 'evento') {
+							if (op.acao === 'evento') {
 								await saveEventFromTcp(op);
 								
 								// Verifica se deve enviar para clientes (dedup)
-								if (! shouldSendToClients(op)) {
+								if (!shouldSendToClients(op)) {
 									shouldForwardToClients = false;
 								}
 							}
@@ -740,7 +758,7 @@ wss.on('connection', (ws) => {
 				if (shouldForwardToClients) {
 					wss.clients.forEach(client => {
 						if (client.readyState === WebSocket.OPEN) {
-							client. send(jsonStr);
+							client.send(jsonStr);
 						}
 					});
 				}
