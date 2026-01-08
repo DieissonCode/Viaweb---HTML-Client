@@ -1,9 +1,8 @@
-﻿package.json
+package.json
 package-lock.json
 .vscode/
 node_modules/
 db-config.js
-logs-db-config.js
 test-db.js
 tests/
 *.png
@@ -11,15 +10,3 @@ tests/
 *.ico
 *.log
 *.svg
-
-# Secrets e configurações sensíveis
-.env
-.env.*
-!.env.example
-
-# Node
-npm-debug.log*
-
-# OS
-.DS_Store
-Thumbs.db
