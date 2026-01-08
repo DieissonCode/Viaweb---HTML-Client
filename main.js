@@ -698,12 +698,6 @@ function processEvent(data) {
     ingestNormalizedEvent(ev);
     updateEventList();
 
-    fetch('/api/logs/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ev)
-    }).catch(() => {});
-
     updateCounts();
 }
 
@@ -1419,8 +1413,7 @@ function connectWebSocket() {
                 if (data.oper && Array.isArray(data.oper)) {
                     for (const op of data.oper) {
                         if (op.acao === 'evento') {
-                            processEvent({ oper: [op] }); // processa somente este evento
-                            ws.send(JSON.stringify({ resp: [{ id: op.id }] }));
+                            processEvent({ oper: [op] });
                         } else if (op.resp && Array.isArray(op.resp)) {
                             op.resp.forEach(r => {
                                 if (pendingCommands.has(r.id)) {

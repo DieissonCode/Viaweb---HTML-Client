@@ -10,6 +10,37 @@ const { spawn } = require('child_process');
 const { LogsRepository } = require('./logs-repository');
 const eventLocks = new Map(); // key -> { operador, timestamp }
 const LOCK_TIMEOUT = 60000; // 60s sem keepalive = auto-release
+const wsEventDedupeCache = new Map();
+const WS_DEDUPE_TTL = 120000; // 2 minutos
+
+function pruneWsDedupeCache() {
+    const now = Date.now();
+    for (const [key, data] of wsEventDedupeCache. entries()) {
+        if (now - data.ts > WS_DEDUPE_TTL) {
+            wsEventDedupeCache.delete(key);
+        }
+    }
+}
+
+function shouldSendToClients(op) {
+    if (op. acao !== 'evento') return true; // Só dedupa eventos
+    
+    pruneWsDedupeCache();
+    
+    const cod = op.codigoEvento || '';
+    const isep = op.isep || '';
+    const complemento = op.zonaUsuario ??  op.complemento ??  0;
+    const ts = op.recepcao || Date.now();
+    
+    const key = `${cod}-${isep}-${complemento}-${ts}`;
+    
+    if (wsEventDedupeCache. has(key)) {
+        return false; // Já enviou para clientes
+    }
+    
+    wsEventDedupeCache.set(key, { ts:  Date.now() });
+    return true;
+}
 
 // Try to use structured logger, fallback to console if winston not available
 let logger;
@@ -526,9 +557,109 @@ logger.info(`   → ws://localhost:${WS_PORT}`);
 logger.info(`   → ws://192.9.100.100:${WS_PORT}`);
 logger.info(`🔗 Redirecionando para ${TCP_HOST}:${TCP_PORT}\n`);
 
-// WebSocket heartbeat configuration
 const HEARTBEAT_INTERVAL = 30000;
 const HEARTBEAT_TIMEOUT = 60000;
+
+async function saveEventFromTcp(op) {
+    const cod = op.codigoEvento || 'N/A';
+    const eventId = op.id;
+    
+    if (cod === '1412') {
+        sendAckToViaweb(eventId);
+        return { success: true, skipped: true };
+    }
+    
+    const rawComplement = (op.zonaUsuario !== undefined ?  op.zonaUsuario : op.complemento);
+    const hasComplemento = rawComplement !== undefined && rawComplement !== null;
+    let zonaUsuario = hasComplemento ?  Number(rawComplement) : 0;
+    if (Number.isNaN(zonaUsuario)) zonaUsuario = 0;
+    
+    const part = op.particao || 1;
+    const local = op.isep || 'N/A';
+    const clientId = op.isep || op.contaCliente || '';
+    let ts = op.recepcao || Date.now();
+    if (ts < 10000000000) ts *= 1000;
+    
+    const event = {
+        codigoEvento: cod,
+        codigo:  cod,
+        complemento: hasComplemento ? zonaUsuario : 0,
+        particao:  part,
+        local: local,
+        isep: local,
+        clientId:  clientId,
+        timestamp: ts,
+        descricao:  op.descricao || null
+    };
+    
+    // ========== Tenta salvar no banco ==========
+    let dbSuccess = false;
+    let savedId = null;
+    
+    try {
+        savedId = await logsRepo.saveIncomingEvent(event);
+        if (savedId) {
+            dbSuccess = true;
+            logger.info(`💾 Evento salvo:  ${cod} | ISEP: ${local} | ID: ${savedId}`);
+        } else {
+            dbSuccess = true; // Duplicado não é erro
+            logger.debug(`⏭️ Evento duplicado ignorado: ${cod} | ISEP:  ${local}`);
+        }
+    } catch (dbErr) {
+        dbSuccess = false;
+        logger.error(`❌ FALHA ao salvar no banco: ${cod} | ISEP: ${local} | Erro: ${dbErr.message}`);
+        metrics.recordError();
+    }
+
+    // Opção 2: Só envia ACK se salvou com sucesso (descomente se preferir)
+    if (dbSuccess) {
+        sendAckToViaweb(eventId);
+    } else {
+        logger.warn(`⚠️ ACK NÃO enviado (falha no BD): ${eventId}`);
+    }
+
+    return { success:  dbSuccess, savedId };
+}
+
+function sendAckToViaweb(eventId) {
+    if (! eventId) return;
+    
+    const cleanId = String(eventId).replace(/-(evento|evento-)/g, '').replace(/\D/g, '');
+    const ackPayload = JSON.stringify({ resp: [{ id:  cleanId }] });
+    
+    if (globalTcpClient && globalTcpClient.writable) {
+        try {
+            const encrypted = encrypt(ackPayload, globalKeyBuffer, globalIvSend);
+            globalIvSend = encrypted.slice(-16);
+            globalTcpClient. write(encrypted);
+            logger.debug(`✅ ACK enviado:  ${cleanId}`);
+        } catch (e) {
+            logger.error('❌ Erro ao enviar ACK:  ' + e.message);
+        }
+    } else {
+        logger.warn('⚠️ TCP não disponível para enviar ACK');
+    }
+}
+
+function sendAckToViaweb(eventId) {
+    if (! eventId) return;
+    const cleanId = String(eventId).replace(/-(evento|evento-)/g, '').replace(/\D/g, '');
+    
+    const ackPayload = JSON.stringify({ resp: [{ id: cleanId }] });
+    
+    if (globalTcpClient && globalTcpClient.writable) {
+        try {
+            const encrypted = encrypt(ackPayload, globalKeyBuffer, globalIvSend);
+            globalIvSend = encrypted.slice(-16);
+            globalTcpClient. write(encrypted);
+            logger.debug(`✅ ACK enviado para Viaweb: ${cleanId}`);
+        } catch (e) {
+            logger.error('❌ Erro ao enviar ACK:  ' + e.message);
+        }
+    } else {
+        logger.warn('⚠️ TCP não disponível para enviar ACK');
+    }
+}
 
 wss.on('connection', (ws) => {
 	const connTime = new Date().toLocaleTimeString();
@@ -574,30 +705,50 @@ wss.on('connection', (ws) => {
 				}, 100);
 			}
 		});
-		
-		globalTcpClient.on('data', (data) => {
-			logger.debug(`📥 TCP chunk (${data.length} bytes) HEX=${formatHex(data)}`); // Log chunk recebido
-			tcpRecvBuffer = Buffer.concat([tcpRecvBuffer, data]); // Acumula no buffer
-			if (tcpRecvBuffer.length % 16 !== 0) { // Se não for múltiplo de 16, aguarda mais dados
-				logger.debug(`⏳ Aguardando completar bloco: buffer=${tcpRecvBuffer.length} bytes`);
-				return;
-			}
-			try {
-				const decrypted = decrypt(tcpRecvBuffer, globalKeyBuffer, globalIvRecv);
-				globalIvRecv = tcpRecvBuffer.slice(-16); // Atualiza IV de recepção com o último bloco do buffer processado
-				logger.debug('📩 TCP→WS (decrypted): ' + decrypted.substring(0, 200) + '...');
-				metrics.recordEvent();
 
-				tcpRecvBuffer = Buffer.alloc(0); // Limpa buffer após processar
-				wss.clients.forEach(client => {
-					if (client.readyState === WebSocket.OPEN) {
-						client.send(decrypted);
+		globalTcpClient. on('data', async (data) => {
+			try {
+				const decrypted = decrypt(data, globalKeyBuffer, globalIvRecv);
+				globalIvRecv = data.slice(-16);
+				
+				const jsonStr = decrypted.toString('utf8').replace(/\x00/g, '').trim();
+				if (! jsonStr) return;
+				
+				logger.debug('📥 TCP recebido:  ' + jsonStr. substring(0, 200));
+				
+				let shouldForwardToClients = true;
+				
+				try {
+					const parsed = JSON.parse(jsonStr);
+					if (parsed.oper && Array.isArray(parsed.oper)) {
+						for (const op of parsed.oper) {
+							if (op. acao === 'evento') {
+								await saveEventFromTcp(op);
+								
+								// Verifica se deve enviar para clientes (dedup)
+								if (! shouldSendToClients(op)) {
+									shouldForwardToClients = false;
+								}
+							}
+						}
 					}
-				});
+				} catch (parseErr) {
+					logger.debug('⚠️ Mensagem TCP não é evento parseável: ' + parseErr.message);
+				}
+				
+				// Envia para clientes WebSocket somente se não for duplicado
+				if (shouldForwardToClients) {
+					wss.clients.forEach(client => {
+						if (client.readyState === WebSocket.OPEN) {
+							client. send(jsonStr);
+						}
+					});
+				}
+				
+				metrics.recordEvent();
 			} catch (e) {
-				logger.error(`❌ Erro ao descriptografar TCP→WS: ${e.message} | HEX=${formatHex(tcpRecvBuffer)}`);
+				logger.error('❌ Erro ao processar TCP: ' + e.message);
 				metrics.recordError();
-				tcpRecvBuffer = Buffer.alloc(0); // Descartar buffer para não ficar preso em estado inválido
 			}
 		});
 
