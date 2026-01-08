@@ -1624,30 +1624,32 @@ disarmAllButton.addEventListener('click', () => {
 });
 
 function handleClosureNotification(data) {
-    const { isep, codigo, complemento } = data;
+    const { isep, codigo, complemento, closedBy } = data;
     
-    console.log('🔔 Encerramento recebido:', { isep, codigo, complemento });
-    
-    // Remove de alarmes ativos
+    console.log('🔔 Encerramento recebido:', { isep, codigo, complemento, closedBy });
+
+    const myUsername = currentUser?.username || currentUser?.displayName;
+    const isMyOwnClosure = closedBy && myUsername && 
+        (closedBy === myUsername || closedBy === currentUser?.displayName);
+
     if (codigo === '1130') {
         if (activeAlarms.has(isep)) {
-            console.log(`✅ Removendo alarme ${isep} da lista (encerrado por outro operador)`);
+            console.log(`✅ Removendo alarme ${isep} da lista`);
             activeAlarms.delete(isep);
         }
     }
-    
-    // Remove de pendentes ativos
+
     const key = `${isep}-${codigo}-${complemento || 0}`;
     if (activePendentes.has(key)) {
-        console.log(`✅ Removendo pendente ${key} da lista (encerrado por outro operador)`);
+        console.log(`✅ Removendo pendente ${key} da lista`);
         activePendentes.delete(key);
     }
     
-    // Se estava com modal aberto para este evento, fecha
-    if (selectedPendingEvent) {
+    // Se estava com modal aberto para este evento e NÃO foi eu que encerrei, avisa
+    if (selectedPendingEvent && !isMyOwnClosure) {
         const ev = selectedPendingEvent.group?.first;
         if (ev && ev.local === isep && ev.codigoEvento === codigo) {
-            alert('Este evento foi encerrado por outro operador.');
+            alert(`Este evento foi encerrado por:  ${closedBy || 'outro operador'}`);
             closeEventUI.close();
         }
     }
