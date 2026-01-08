@@ -701,18 +701,16 @@ function processEvent(data) {
     updateCounts();
 }
 
-// ---------- Hidratação a partir do banco ----------
 function hydrateEventFromDbRow(row) {
     let raw = {};
     try {
-        raw = row.RawEvent ? JSON.parse(row.RawEvent) : {};
+        raw = row.RawEvent ?  JSON.parse(row.RawEvent) : {};
     } catch (_) {
         raw = {};
     }
     const codigo = row.CodigoEvento || row.Codigo || raw.codigoEvento || raw.codigo || 'N/A';
 
-    // 📌 Use componentes UTC para não subtrair o fuso local
-    const timestamp = row.DataEvento ? new Date(row.DataEvento).getTime() : (raw.timestamp || Date.now());
+    const timestamp = row.DataEvento ?  new Date(row.DataEvento).getTime() : (raw.timestamp || Date.now());
     const d = new Date(timestamp);
     const dia = d.getUTCDate().toString().padStart(2, '0');
     const mes = (d.getUTCMonth() + 1).toString().padStart(2, '0');
@@ -721,7 +719,7 @@ function hydrateEventFromDbRow(row) {
     const min = d.getUTCMinutes().toString().padStart(2, '0');
     const seg = d.getUTCSeconds().toString().padStart(2, '0');
 
-    const complementoRaw = (row.Complemento !== undefined ? row.Complemento : raw.complemento);
+    const complementoRaw = (row.Complemento !== undefined ?  row.Complemento : raw.complemento);
     const complementoDisplay = (complementoRaw === null || complementoRaw === undefined || complementoRaw === '') ? '0' : normalizeComplementoForDedupe(complementoRaw);
     const local = row.ISEP || row.Local || raw.local || raw.isep || raw.clientId || 'N/A';
     const particao = row.Particao || raw.particao || 1;
@@ -733,6 +731,37 @@ function hydrateEventFromDbRow(row) {
     const userId = raw.userId || null;
     const userMatricula = raw.userMatricula || null;
 
+    // Reconstrói descrição se for arm/disarm
+    const armDisarmCodes = ['1401','1402','1403','1404','1405','1406','1407','1408','3401','3402','3403','3404','3405','3406','3407','3408'];
+    const tipos = {
+        0: '[Horário Programado]',
+        1: '[Monitoramento]',
+        2: '[Facilitador]',
+        3: '[Senha de Uso Único]',
+        4: '[Senha de Uso Único]',
+        5: '[Senha de Uso Único]',
+        6: '[TI - Manutenção]'
+    };
+
+    let finalDesc = descFinal;
+    const complementoNum = Number(complementoDisplay) || 0;
+
+    if (armDisarmCodes.includes(codigo) && window.UsersDB) {
+        if (tipos[complementoNum]) {
+            if (! finalDesc.includes(tipos[complementoNum])) {
+                finalDesc = `${finalDesc.trimEnd()} ${tipos[complementoNum]}`;
+            }
+        } else if (! userName) {
+            const usersByIsep = window.UsersDB.getUsersByIsep(String(local)) || [];
+            const userData = usersByIsep.find(u => Number(u.ID_USUARIO) === complementoNum);
+            if (userData) {
+                finalDesc = `${baseDesc}${window.UsersDB.formatUserName(userData)}`;
+            } else if (complementoNum > 6) {
+                finalDesc = `${baseDesc.trimEnd()} Usuário ID ${complementoNum} Não Cadastrado`;
+            }
+        }
+    }
+
     return {
         id: row.Id || raw.id || '',
         local,
@@ -741,7 +770,7 @@ function hydrateEventFromDbRow(row) {
         complemento: complementoDisplay,
         particao,
         baseDescricao: baseDesc,
-        descricao: descFinal,
+        descricao: finalDesc,
         codigoEvento: codigo,
         clientId: local,
         timestamp,
