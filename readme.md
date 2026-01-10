@@ -43,100 +43,115 @@ Perfeito, Dieisson! Vou gerar o diagrama em Mermaid estilo "Node-centered" com s
 
 Aqui está pronto para você copiar e colar no README:
 
-Markdown
-Copiar
-## 2. ARQUITETURA GERAL DO SISTEMA
+2. Arquitetura Geral do Sistema
+A arquitetura do Viaweb HTML Client é organizada em 7 camadas, cada uma com responsabilidades claras e independentes.
+Esse modelo facilita manutenção, escalabilidade e depuração.
 
-### Diagrama de Componentes
+🧩 1. Camada de Apresentação (Frontend – Navegador)
+Responsável pela interface com o usuário.
 
+Inclui:
 
+index.html
+main.js
+styles.css
+crypto.js
+units-db.js
+Funções:
 
-mermaid graph TB subgraph Frontend["🖥️ FRONTEND"] Browser["Navegador Web
-HTML5 + JavaScript"] end
+Exibir status, partições, zonas e eventos
+Enviar comandos ao servidor via WebSocket
+Receber eventos em tempo real
+Renderizar UI responsiva em tema escuro
+Processar códigos de eventos
+🔌 2. Camada de Comunicação (WebSocket / REST / HTTP)
+Responsável por conectar o navegador ao backend.
 
-subgraph Backend["⚙️ BACKEND - SERVER.JS"]
-    WS["WebSocket<br/>Porta 8090"]
-    REST["API REST<br/>Porta 3000"]
-    HTTP["HTTP Estático<br/>Porta 8000"]
-    Core["Núcleo do Servidor<br/>- Roteador de Comandos<br/>- Criptografia AES-256-CBC<br/>- Gerenciador de Conexões"]
-end
+Protocolos usados:
 
-subgraph Viaweb["🔗 VIAWEB RECEIVER"]
-    TCP["Cliente TCP<br/>10.0.20.43:2700<br/>Protocolo Viaweb"]
-end
+WebSocket (porta 8090) → tempo real
+REST API (porta 3000) → listagem de unidades
+HTTP (porta 8000) → arquivos estáticos
+Esta camada garante:
 
-subgraph Database["💾 SQL SERVER"]
-    DB["Banco de Dados<br/>- Logs de Eventos<br/>- Configurações<br/>- Histórico"]
-end
+Comunicação contínua com o front
+Atualizações sem recarregar página
+Transporte seguro e padronizado
+⚙️ 3. Camada de Aplicação (server.js – Núcleo)
+O cérebro do sistema.
 
-subgraph Equipment["🚨 EQUIPAMENTOS"]
-    Alarme["Alarmes / Sensores<br/>- Partições<br/>- Zonas<br/>- Status"]
-end
+Responsável por:
 
-Browser -->|WebSocket| WS
-Browser -->|HTTP/REST| REST
-Browser -->|Arquivos Estáticos| HTTP
+Roteamento de comandos
+Processamento de respostas
+Serialização/normalização JSON
+Gerenciamento de conexões WebSocket
+Manutenção de comandos pendentes
+Envio/recebimento de ACKs
+Gestão de sessões de unidades conectadas
+Esta é a camada onde a lógica real do sistema vive.
 
-WS --> Core
-REST --> Core
-HTTP --> Core
+🔐 4. Camada de Criptografia (AES-256-CBC)
+Implementada dentro do server.js e espelhada no crypto.js no front.
 
-Core -->|Criptografa/Descriptografa| TCP
-Core -->|Persiste Eventos| DB
+Responsabilidades:
 
-TCP -->|Comandos Criptografados| Viaweb
-Viaweb -->|Eventos Criptografados| TCP
+Criptografar mensagens enviadas ao Viaweb Receiver
+Descriptografar mensagens recebidas
+Gerenciar IV dinâmico:
+ivSend → atualiza após cada encrypt
+ivRecv → atualiza após cada decrypt
+Garantias:
 
-Viaweb -->|Controla| Alarme
-Alarme -->|Gera Eventos| Viaweb
+Integridade
+Confidencialidade
+Compatibilidade total com protocolo Viaweb
+🔗 5. Camada de Integração (TCP + Banco de Dados)
+Conecta o sistema a serviços externos.
 
-style Core fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
-style WS fill:#50C878,stroke:#2D7A4A,stroke-width:2px,color:#fff
-style REST fill:#50C878,stroke:#2D7A4A,stroke-width:2px,color:#fff
-style HTTP fill:#50C878,stroke:#2D7A4A,stroke-width:2px,color:#fff
-style TCP fill:#FF6B6B,stroke:#A63D3D,stroke-width:2px,color:#fff
-style DB fill:#FFB84D,stroke:#8B6914,stroke-width:2px,color:#fff
+Componentes:
 
-### Fluxo de Comunicação
+Cliente TCP → 10.0.20.43:2700
+Cliente SQL Server → definido em db-config.js
+Funções:
 
+Encaminhar comandos criptografados
+Receber eventos do Viaweb Receiver
+Persistir logs no banco
+Consultar unidades para o frontend
+💾 6. Camada de Dados (SQL Server)
+Armazena:
 
-Pronto! Agora o diagrama vai ficar perfeito no GitHub, com:
+Unidades (INSTALACAO)
+Logs de eventos
+Configurações internas
+Histórico de operações
+É acessada exclusivamente via server.js.
 
-✅ Cores diferenciadas por camada
-✅ Estrutura clara e hierárquica
-✅ Setas indicando fluxo de dados
-✅ Legenda visual com emojis
-✅ Totalmente responsivo
+🚨 7. Camada de Dispositivos (Alarmes)
+A camada mais externa.
 
-Quer que eu:
+Inclui:
 
-Substitua o diagrama ASCII antigo por esse Mermaid no README?
-Crie mais diagramas Mermaid para os outros fluxos (Envio de Comando, Recepção de Evento)?
-Ambos — atualize tudo?
+Centrais de alarme
+Partições
+Zonas
+Sensores diversos
+Funções:
 
-Responda com: 1, 2, ou 3
+Gerar eventos
+Responder a comandos de armar/desarmar
+Reportar status
+📤 Fluxo Simplificado
+Comando (Armar/Desarmar):
 
-#### Inicialização do Sistema
+Navegador → WebSocket → server.js → Criptografia AES → TCP → Viaweb Receiver → Equipamento
+Evento (Disparo, Falha, Restauro):
 
-node server.js inicia ↓
-Carrega configurações (db-config.js) ↓
-Conecta ao SQL Server (teste via test-db.js) ↓
-Inicia servidor WebSocket (porta 8090) ↓
-Inicia API REST (porta 3000) ↓
-Inicia servidor HTTP estático (porta 8000) ↓
-Conecta ao Viaweb Receiver via TCP (10.0.20.43:2700) ↓
-Envia operação IDENT (identificação) ↓
-Aguarda confirmação do Viaweb Receiver ↓
-Sistema pronto para receber comandos do frontend
-#### Envio de Comando (Ex: Armar Partição)
+Equipamento → Viaweb Receiver → TCP → server.js → WebSocket → Navegador
+Persistência:
 
-
-Frontend (WebSocket) │ { "acao": "armar", "idISEP": "0572", "particoes": [1,2] } ↓ server.js (Valida comando) │ Criptografa com AES-256-CBC ↓ Viaweb Receiver (TCP 2700) │ Processa comando ↓ Equipamento (Alarme) │ Executa ação (arma partições) ↓ Viaweb Receiver (Envia resposta criptografada) ↓ server.js (Descriptografa) │ Salva em banco de dados ↓ Frontend (WebSocket - Atualiza UI)
-
-#### Recepção de Evento (Ex: Zona Violada)
-
-
-Equipamento (Alarme) │ Zona violada → gera evento ↓ Viaweb Receiver (TCP 2700) │ Envia evento criptografado ↓ server.js (Descriptografa) │ Valida evento ↓ Banco de Dados (SQL Server) │ Persiste evento na tabela Logs ↓ WebSocket (Broadcast para todos clientes) │ { "tipo": "evento", "codigo": "1130", … } ↓ Frontend (Atualiza tabela de eventos em tempo real) │ Exibe notificação visual/sonora ↓ Frontend (Envia ACK via WebSocket) ↓ server.js (Confirma recebimento ao Viaweb Receiver)
+server.js → SQL Server
 
 ---
 
