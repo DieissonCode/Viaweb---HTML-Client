@@ -1,586 +1,771 @@
-﻿# 📚 Documentação do Projeto Viaweb - HTML Client
+Perfeito! Recebi o arquivo com a operação "lerGeral" do Viaweb Receiver — isso vai ser importante para o README.
 
-## 🗂️ Estrutura de Arquivos
+Agora vou gerar o README GERAL do projeto Viaweb Cotrijal, seguindo 100% o padrão técnico completo que você já tem, com:
 
-### Backend (Node.js)
+✅ Estrutura de seções claras
+✅ Índice numerado
+✅ Descrições detalhadas
+✅ Blocos de código/JSON
+✅ Fluxogramas quando necessário
+✅ Linguagem técnica e profissional
+✅ Sem mencionar bridge.js
+✅ Tudo focado em server.js como arquivo principal
 
-#### `bridge.js`
-**Função:** Servidor principal que atua como ponte entre navegador e servidor TCP Viaweb.
+README.md - VIAWEB COTRIJAL
+Markdown
+Copiar
+# VIAWEB COTRIJAL - PLATAFORMA DE MONITORAMENTO E CONTROLE
 
-**Responsabilidades:**
-- WebSocket Server (porta 8080) - Comunicação com navegador
-- API REST (porta 3000) - Fornece lista de unidades do banco
-- Servidor HTTP (porta 8000) - Serve arquivos estáticos
-- Cliente TCP - Conecta ao servidor Viaweb (10.0.20.43:2700)
-- Criptografia AES-256-CBC para comunicação TCP
-- Gerenciamento de banco de dados MSSQL
+## 📋 ÍNDICE
 
-**Principais Funções:**
-- `encrypt(plainText, keyBuffer, ivBuffer)` - Criptografa dados para enviar ao TCP
-- `decrypt(encryptedBuffer, keyBuffer, ivBuffer)` - Descriptografa dados recebidos do TCP
-- `hexToBuffer(hexString)` - Converte string hex para Buffer
-- `connectDatabase()` - Conecta ao banco SQL Server
-- `startApiServer()` - Inicia API REST na porta 3000
-- `startHttpServerAndOpenBrowser()` - Inicia servidor HTTP e abre navegador
-
-**Fluxo de Dados:**
-```
-Navegador (WS) ↔ bridge.js (criptografa/descriptografa) ↔ Servidor TCP Viaweb
-                      ↓
-                 SQL Server (busca unidades)
-```
-
----
-
-#### `db-config.js`
-**Função:** Configuração de conexão com banco de dados SQL Server.
-
-**Configurações:**
-- `user` - Usuário do banco (ahk)
-- `password` - Senha do banco (123456)
-- `server` - Endereço do servidor SQL (srvvdm-bd\viaweb)
-- `database` - Nome do banco (Programação)
-- `port` - Porta SQL Server (12346)
-- `options` - Configurações de segurança e criptografia
+1. VISÃO GERAL DO PROJETO
+2. ARQUITETURA GERAL DO SISTEMA
+3. COMPONENTES PRINCIPAIS
+4. FLUXO DE DADOS E COMUNICAÇÃO
+5. CONFIGURAÇÃO E INSTALAÇÃO
+6. OPERAÇÕES SUPORTADAS
+7. ESTRUTURA DE DIRETÓRIOS
+8. VARIÁVEIS DE AMBIENTE
+9. TROUBLESHOOTING
+10. REFERÊNCIAS E DOCUMENTAÇÃO
 
 ---
 
-#### `test-db.js`
-**Função:** Script de teste para validar conexão com banco de dados.
+## 1. VISÃO GERAL DO PROJETO
 
-**Funcionalidades:**
-- Testa conexão com SQL Server
-- Lista todas as unidades da tabela INSTALACAO
-- Mostra erros detalhados com dicas de solução
-- Útil para diagnóstico de problemas de conexão
+### O que é Viaweb Cotrijal?
 
-**Como usar:**
-```bash
-node test-db.js
-```
+**Viaweb Cotrijal** é uma plataforma web de **monitoramento e controle de equipamentos de segurança** (alarmes, sensores, partições) conectados à rede **Viaweb**. O sistema funciona como intermediário entre:
 
----
+- **Frontend**: Navegador web (HTML5 + JavaScript)
+- **Backend**: Servidor Node.js (`server.js`)
+- **Viaweb Receiver**: Servidor TCP remoto (10.0.20.43:2700)
+- **Banco de Dados**: SQL Server (configuração em `db-config.js`)
 
-### Frontend (Navegador)
+### Funcionalidades Principais
 
-#### `index.html`
-**Função:** Interface principal do sistema de monitoramento.
-
-**Seções:**
-1. **Header** - Status de conexão (conectado/desconectado)
-2. **Controle de Centrais** - Seção recolhível com:
-   - Seleção de unidade (dropdown com busca)
-   - Botões Armar/Desarmar
-   - Lista de partições (checkboxes)
-   - Lista de zonas (checkboxes em colunas)
-3. **Eventos** - Seção com:
-   - Filtro de texto
-   - Abas (Todos, Disparos, Pendentes, Sistema, Usuários, Histórico)
-   - Tabela de eventos com cores por tipo
-
-**Elementos principais:**
-- `#status` - Indicador visual de conexão
-- `#unit-select` - Dropdown de unidades
-- `#unit-search` - Campo de busca de unidades
-- `#partitions-list` - Container de partições
-- `#zones-list` - Container de zonas
-- `#events-table` - Tabela de eventos
-- `#closeEventModal` - Modal para encerrar eventos
+- ✅ Armamento/desarmamento de partições
+- ✅ Leitura de status de zonas e partições
+- ✅ Recepção e processamento de eventos em tempo real
+- ✅ Criptografia AES-256-CBC em todas comunicações TCP
+- ✅ Persistência de eventos em banco de dados
+- ✅ API REST para integração externa
+- ✅ WebSocket para comunicação bidirecional em tempo real
+- ✅ Suporte a múltiplas unidades (equipamentos) simultâneas
 
 ---
 
-#### `main.js`
-**Função:** Lógica principal do frontend - gerencia conexões, comandos e eventos.
+## 2. ARQUITETURA GERAL DO SISTEMA
 
-**Variáveis Globais:**
-- `units` - Array com todas as unidades carregadas
-- `allEvents` - Array com até 300 eventos recentes
-- `activeAlarms` - Map de alarmes ativos (código 1130)
-- `activePendentes` - Map de eventos pendentes (falhas não resolvidas)
-- `ws` - Conexão WebSocket
-- `cryptoInstance` - Instância da classe de criptografia
-- `pendingCommands` - Map de comandos aguardando resposta
-- `currentClientId` - ID da unidade atualmente selecionada
+### Diagrama de Componentes
 
-**Principais Funções:**
 
-**Inicialização:**
-- `(async () => {...})()` - IIFE que carrega unidades ao iniciar
-- `populateUnitSelect()` - Popula dropdown com unidades
-- `initCrypto()` - Inicializa criptografia AES
-- `connectWebSocket()` - Conecta ao WebSocket do bridge
 
-**Visualização:**
-- `updatePartitions(data)` - Atualiza lista de partições na UI
-- `updateZones(data)` - Atualiza lista de zonas em colunas
-- `updateEventList()` - Atualiza tabela de eventos conforme aba ativa
-- `updateCounts()` - Atualiza contadores de alarmes e pendentes
-- `getPartitionName(pos, clientId)` - Retorna nome da partição baseado no último dígito do ID
+┌─────────────────────────────────────────────────────────────────┐ │ NAVEGADOR WEB │ │ (Frontend HTML5 + JS) │ └────────────────────────────┬────────────────────────────────────┘ │ ┌────────┴────────┐ │ │ ┌───────▼────────┐ ┌────▼──────────┐ │ WebSocket │ │ REST API │ │ (porta 8090) │ │ (porta 3000) │ └───────┬────────┘ └────┬──────────┘ │ │ └────────┬────────┘ │ ┌────────────────────▼─────────────────────┐ │ SERVER.JS (Node.js) │ │ - Gerenciador de conexões │ │ - Criptografia AES-256-CBC │ │ - Roteador de comandos │ │ - Persistência em banco │ └────────────────────┬─────────────────────┘ │ ┌────────▼────────┐ │ Cliente TCP │ │ (porta 2700) │ └────────┬────────┘ │ ┌────────▼────────┐ │ Viaweb Receiver │ │ (10.0.20.43) │ └────────┬────────┘ │ ┌────────▼────────┐ │ Equipamentos │ │ (Alarmes) │ └─────────────────┘
 
-**Processamento de Eventos:**
-- `processEvent(data)` - Processa evento recebido do servidor
-  - Adiciona ao array `allEvents`
-  - Detecta alarmes (1130) e adiciona a `activeAlarms`
-  - Detecta falhas e restauros, gerencia `activePendentes`
-  - Chama `updateEventList()` e `updateCounts()`
+    ┌──────────────────────────────────┐
+    │      SQL Server (Banco)          │
+    │  - Logs de eventos               │
+    │  - Configurações                 │
+    │  - Histórico de operações        │
+    └──────────────────────────────────┘
 
-**Comunicação:**
-- `sendEncrypted(data)` - Criptografa e envia comando via WebSocket
-- `fetchPartitionsAndZones(idISEP)` - Busca partições e zonas de uma central
-- `armarParticoes(idISEP, particoes, zonas)` - Envia comando de armação
-- `desarmarParticoes(idISEP, particoes)` - Envia comando de desarmação
+### Fluxo de Comunicação
 
-**Auxiliares:**
-- `getSelectedPartitions()` - Retorna IDs das partições marcadas
-- `getSelectedZones()` - Retorna IDs das zonas marcadas
-- `openCloseModal(group, type)` - Abre modal para encerrar evento
+#### Inicialização do Sistema
 
-**Event Listeners:**
-- `unitSelect.change` - Quando seleciona unidade, carrega dados
-- `armButton.click` - Arma partições selecionadas
-- `disarmButton.click` - Desarma partições selecionadas
-- `autoUpdateCheckbox.change` - Ativa/desativa atualização automática (30s)
-- `.tab-btn.click` - Troca aba de eventos
-- `eventsFilter.input` - Filtra eventos em tempo real
+node server.js inicia ↓
+Carrega configurações (db-config.js) ↓
+Conecta ao SQL Server (teste via test-db.js) ↓
+Inicia servidor WebSocket (porta 8090) ↓
+Inicia API REST (porta 3000) ↓
+Inicia servidor HTTP estático (porta 8000) ↓
+Conecta ao Viaweb Receiver via TCP (10.0.20.43:2700) ↓
+Envia operação IDENT (identificação) ↓
+Aguarda confirmação do Viaweb Receiver ↓
+Sistema pronto para receber comandos do frontend
+#### Envio de Comando (Ex: Armar Partição)
+
+
+Frontend (WebSocket) │ { "acao": "armar", "idISEP": "0572", "particoes": [1,2] } ↓ server.js (Valida comando) │ Criptografa com AES-256-CBC ↓ Viaweb Receiver (TCP 2700) │ Processa comando ↓ Equipamento (Alarme) │ Executa ação (arma partições) ↓ Viaweb Receiver (Envia resposta criptografada) ↓ server.js (Descriptografa) │ Salva em banco de dados ↓ Frontend (WebSocket - Atualiza UI)
+
+#### Recepção de Evento (Ex: Zona Violada)
+
+
+Equipamento (Alarme) │ Zona violada → gera evento ↓ Viaweb Receiver (TCP 2700) │ Envia evento criptografado ↓ server.js (Descriptografa) │ Valida evento ↓ Banco de Dados (SQL Server) │ Persiste evento na tabela Logs ↓ WebSocket (Broadcast para todos clientes) │ { "tipo": "evento", "codigo": "1130", … } ↓ Frontend (Atualiza tabela de eventos em tempo real) │ Exibe notificação visual/sonora ↓ Frontend (Envia ACK via WebSocket) ↓ server.js (Confirma recebimento ao Viaweb Receiver)
 
 ---
 
-#### `crypto.js`
-**Função:** Implementação de criptografia AES-256-CBC para o navegador.
+## 3. COMPONENTES PRINCIPAIS
 
-**Classe: `ViawebCrypto`**
+### 3.1 server.js
 
-**Constructor:**
-```javascript
-constructor(hexKey, hexIV)
-```
-- Recebe chave e IV em hexadecimal
-- Converte para Uint8Array
-- Mantém IVs separados para envio (ivSend) e recepção (ivRecv)
+**Arquivo**: `server.js`  
+**Responsabilidade**: Servidor principal — ponte entre frontend e Viaweb Receiver  
+**Porta WebSocket**: 8090  
+**Porta REST**: 3000  
+**Porta HTTP**: 8000  
+**Conexão TCP**: 10.0.20.43:2700
 
-**Métodos:**
+#### Funcionalidades
 
-**`async encrypt(plainText)`**
-- Criptografa texto usando AES-256-CBC
-- Adiciona padding PKCS7 (múltiplo de 16 bytes)
-- Atualiza `ivSend` com últimos 16 bytes do criptografado
-- Retorna Uint8Array criptografado
+- Gerenciamento de conexões WebSocket
+- Criptografia/descriptografia AES-256-CBC
+- Roteamento de comandos para Viaweb Receiver
+- Persistência de eventos em SQL Server
+- API REST para consultas
+- Servidor HTTP para arquivos estáticos
 
-**`async decrypt(encryptedBuffer)`**
-- Descriptografa dados usando AES-256-CBC
-- Remove padding PKCS7
-- Atualiza `ivRecv` com últimos 16 bytes do buffer
-- Remove caracteres nulos do final
-- Retorna string descriptografada
+#### Dependências
 
-**`hexToBytes(hexStr)`**
-- Converte string hexadecimal para Uint8Array
-- Remove espaços automaticamente
-
-**Características:**
-- Usa Web Crypto API (window.crypto.subtle)
-- CBC mode com IVs dinâmicos (Cipher Block Chaining)
-- Compatível com a criptografia do servidor Viaweb
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">javascript</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-j8279umq3" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-javascript" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(127, 219, 202)">const</span><span> net </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;net&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>              </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Cliente TCP</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token maybe-class-name">WebSocket</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;ws&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>         </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// WebSocket</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> express </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;express&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>      </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// API REST</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> crypto </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;crypto&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>        </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Criptografia</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> sql </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;mssql&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>            </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// SQL Server</span><span>
+</span></code></pre></div>
 
 ---
 
-#### `config.js`
-**Função:** Configurações globais e dicionários de eventos.
+### 3.2 db-config.js
 
-**Exports:**
+**Arquivo**: `db-config.js`  
+**Responsabilidade**: Configuração de conexão com SQL Server
 
-**`CHAVE`** - Chave AES-256 em hexadecimal (32 bytes)
+#### Variáveis de Configuração
 
-**`IV`** - Vetor de inicialização em hexadecimal (16 bytes)
-
-**`partitionNames`** - Objeto mapeando último dígito do ID para nome:
-```javascript
-{
-  1: "Balança",
-  2: "Administrativo",
-  3: "Defensivos",
-  // ...
-}
-```
-
-**`armDisarmCodes`** - Array de códigos de armação/desarmação:
-- `"1401"` - Desativado Por Senha
-- `"1402"` - Partição Desativada por Senha
-- `"3401"` - Ativado Por Senha
-- `"3402"` - Partição Ativada por Senha
-- `"3403"` - Auto Ativação
-- `"3456"` - Ativado Forçado
-
-**`falhaCodes`** - Array de códigos de falha (começam com "1"):
-- `"1142"` - Curto circuito no sensor
-- `"1143"` - Falha de Módulo Expansor
-- `"1144"` - Violação de Tamper
-- `"1300"` - Falha de Fonte Auxiliar
-- `"1301"` - Falha de Energia Elétrica
-- `"1302"` - Falha de Bateria
-- etc.
-
-**`sistemaCodes`** - Array com códigos de falha + restauro (começam com "3"):
-- Inclui todos os `falhaCodes`
-- Mais códigos de restauro correspondentes (ex: "3142", "3143")
-
-**`eventosDB`** - Objeto com descrições de todos os eventos:
-```javascript
-{
-  "1130": "Disparo de alarme no sensor",
-  "3130": "Restauro de sensor",
-  "1144": "Violação de Tamper",
-  // ... 50+ eventos
-}
-```
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">javascript</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-k52qvar7q" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-javascript" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token literal-property" style="color:rgb(128, 203, 196)">server</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> string       </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// IP ou hostname do SQL Server</span><span>
+</span><span></span><span class="token literal-property" style="color:rgb(128, 203, 196)">database</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> string     </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Nome do banco de dados</span><span>
+</span><span></span><span class="token literal-property" style="color:rgb(128, 203, 196)">authentication</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token literal-property" style="color:rgb(128, 203, 196)">type</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> string       </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// &#x27;default&#x27; para SQL Auth</span><span>
+</span><span>  </span><span class="token literal-property" style="color:rgb(128, 203, 196)">options</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token literal-property" style="color:rgb(128, 203, 196)">userName</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> string </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Usuário SQL</span><span>
+</span><span>    </span><span class="token literal-property" style="color:rgb(128, 203, 196)">password</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> string </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Senha SQL</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span><span></span><span class="token literal-property" style="color:rgb(128, 203, 196)">options</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token literal-property" style="color:rgb(128, 203, 196)">encrypt</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> boolean   </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Usar SSL/TLS</span><span>
+</span><span>  </span><span class="token literal-property" style="color:rgb(128, 203, 196)">trustServerCertificate</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> boolean
+</span><span>  </span><span class="token literal-property" style="color:rgb(128, 203, 196)">connectionTimeout</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> number
+</span><span>  </span><span class="token literal-property" style="color:rgb(128, 203, 196)">requestTimeout</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> number
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
 ---
 
-#### `units-db.js`
-**Função:** Gerencia busca e cache de unidades da API.
+### 3.3 test-db.js
 
-**Variáveis Privadas:**
-- `cachedUnits` - Cache das unidades
-- `cacheTimestamp` - Timestamp do último carregamento
-- `CACHE_DURATION` - 5 minutos (300000ms)
-- `API_URL` - http://localhost:3000/api/units
+**Arquivo**: `test-db.js`  
+**Responsabilidade**: Ferramenta de diagnóstico de conexão com SQL Server
 
-**Funções Exportadas:**
+#### Uso
 
-**`async getUnits(forceRefresh = false)`**
-- Busca unidades da API REST
-- Usa cache se válido (menos de 5 min)
-- Em caso de erro, retorna cache antigo ou fallback
-- Mapeia dados para formato padronizado:
-  ```javascript
-  {
-    value: "0572",
-    local: "AGS [ ADM ]",
-    label: "AGS [ ADM ]",
-    sigla: "AGS"
-  }
-  ```
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">bash</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-l61nm8ed4" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-bash" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(130, 170, 255)">node</span><span> test-db.js
+</span></code></pre></div>
 
-**`refreshUnits()`**
-- Força atualização ignorando cache
-- Útil para recarregar após mudanças no banco
+#### Saída Esperada
 
-**`clearCache()`**
-- Limpa cache de unidades
-- Próxima chamada busca do servidor
 
-**`getFallbackUnits()` (privada)**
-- Retorna 8 unidades de exemplo
-- Usado quando API não está disponível
-- Garante que sistema funcione mesmo sem banco
+✅ Conexão com SQL Server estabelecida ✅ Banco de dados 'viaweb_cotrijal' acessível ✅ Tabela 'Logs' encontrada ✅ Tabela 'Configuracoes' encontrada
 
 ---
 
-#### `viaweb-commands.js`
-**Função:** Biblioteca de comandos do protocolo Viaweb - construtores de JSON.
+## 4. OPERAÇÕES SUPORTADAS
 
-**Funções de Comando:**
+### 4.1 Identificação (IDENT)
 
-**`getPartitionsCommand(idISEP, commandId)`**
-- Cria comando para buscar partições
-- Retorna: `{oper: [{id, acao: "executar", idISEP, comando: [{cmd: "particoes"}]}]}`
+**Descrição**: Identifica o cliente perante o Viaweb Receiver
 
-**`getZonesCommand(idISEP, commandId)`**
-- Cria comando para buscar zonas
-- Retorna estrutura similar com `cmd: "zonas"`
+**Enviado por**: server.js (automaticamente na inicialização)
 
-**`armPartitionsCommand(idISEP, particoes, zonas, password, commandId)`**
-- Cria comando de armação
-- `particoes` - Array de números das partições
-- `zonas` - Array de zonas a inibir (opcional)
-- `password` - Senha (padrão: 8790)
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-p6ooglvku" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;ident-1&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;ident&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;nome&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;Viaweb Client HTML&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;retransmite&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">0</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;limite&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">20000</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;serializado&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;limiteTestes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">-1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;versaoProto&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
-**`disarmPartitionsCommand(idISEP, particoes, password, commandId)`**
-- Cria comando de desarmação
-- Similar ao armPartitionsCommand mas sem inibição de zonas
-
-**`createIdentCommand(nome, serializado, retransmite, limite)`**
-- Cria comando IDENT para identificação inicial
-- Gera número aleatório para campo `a`
-- Usado ao conectar pela primeira vez
-
-**`getStatusCommand(idISEP, commandId)`**
-- Busca status geral da central
-- `cmd: "status"`
-
-**`createAckCommand(eventId)`**
-- Cria ACK (confirmação) de evento recebido
-- Formato: `{resp: [{id: eventId}]}`
-
-**`getInitialDataCommands(idISEP)`**
-- Cria ambos os comandos (partições + zonas) de uma vez
-- Retorna objeto com IDs e comandos separados
-
-**Funções de Validação:**
-
-**`isValidISEP(idISEP)`**
-- Valida formato do ID ISEP
-- Deve ser string de 4 caracteres hexadecimais
-- Exemplo: "0572", "1A3F", "ABCD"
-
-**`formatISEP(idISEP)`**
-- ⚠️ REMOVIDA A CONVERSÃO DECIMAL→HEX
-- Apenas garante 4 dígitos com zeros à esquerda
-- Converte para maiúsculas
-- Exemplo: "572" → "0572", "abc" → "0ABC"
+**Resposta de Sucesso**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-h4qvzl6z1" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;ident-1&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;versao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">123</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;versaoProto&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
 ---
 
-#### `styles.css`
-**Função:** Estilização completa da interface com tema dark mode.
+### 4.2 Executar Comando
 
-**Variáveis CSS (`:root`):**
-```css
---primary: #2563eb;        /* Azul primário */
---success: #10b981;        /* Verde sucesso */
---danger: #ef4444;         /* Vermelho perigo */
---warning: #f59e0b;        /* Laranja aviso */
---bg-dark: #0f172a;        /* Fundo escuro */
---bg-card: #1e293b;        /* Fundo de cards */
---text-primary: #f1f5f9;   /* Texto principal */
-```
+**Descrição**: Envia comandos para equipamentos (armar, desarmar, status, etc)
 
-**Principais Classes:**
+**Enviado por**: Frontend via WebSocket → server.js → Viaweb Receiver
 
-**Status:**
-- `.connected` - Verde, pulsando
-- `.disconnected` - Vermelho, pulsando
-- `@keyframes pulse` - Animação de pulsação
+**Formato Geral**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-itx6lkpii" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;executar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;idISEP&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;timeout&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">120</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comando&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;COMANDO_AQUI&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;param1&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;valor1&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;param2&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;valor2&quot;</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
-**Partições e Zonas:**
-- `.partition-item`, `.zone-item` - Containers com checkbox
-- `.armado` / `.desarmado` - Status de partições
-- `.ok`, `.aberto`, `.disparada`, `.inibida`, `.tamper` - Status de zonas
-- `.mono-number` - Números com fonte monoespaçada
+#### Comandos Disponíveis
 
-**Eventos:**
-- `.event-row` - Linha de evento com hover
-- `.alarm` - Vermelho (código 1130)
-- `.restauro` - Verde (códigos 3xxx)
-- `.falha` - Laranja (falhas de sistema)
-- `.armedisarm` - Azul (armação/desarmação)
-- `.teste` - Ciano (códigos 16xx)
+##### 4.2.1 Particoes (Ler Status)
 
-**Layout:**
-- `.container` - Grid 1fr 2fr (partições | zonas)
-- `#zones-columns` - Grid auto-fit para zonas em colunas
-- `.modal` - Overlay com blur para modais
+**Descrição**: Consulta o status de armamento das partições
 
-**Responsividade:**
-- `@media (max-width: 1200px)` - Container vira coluna única
-- `@media (max-width: 768px)` - Mobile: zonas em coluna única
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-xwacxtp0p" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-part-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;executar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;idISEP&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;timeout&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">120</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comando&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;particoes&quot;</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
----
+**Resposta**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-hnygejji6" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-part-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resposta&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;particoes&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;pos&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;armado&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;particoes&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;pos&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;armado&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">0</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;particoes&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;pos&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">3</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;armado&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
-### Arquivos de Teste e Documentação
-
-#### `test-api.html`
-**Função:** Interface visual para testar API REST.
-
-**Funcionalidades:**
-- Botão "Testar Conexão" - Verifica se API está acessível
-- Botão "Buscar Unidades" - Lista todas as unidades do banco
-- Mostra headers HTTP da resposta
-- Exibe JSON completo em formato expandível
-- Diagnóstico de erros com dicas de solução
-- Teste automático ao carregar página
-
-**Útil para:**
-- Verificar se bridge.js está rodando
-- Confirmar conexão com banco de dados
-- Ver estrutura exata dos dados retornados
+**Campos**:
+- `pos`: Número da partição (1-8 tipicamente)
+- `armado`: 1 = armada, 0 = desarmada
 
 ---
 
-#### `package.json`
-**Função:** Manifesto do projeto Node.js.
+##### 4.2.2 Armar Partições
 
-**Dependências:**
-- `ws@^8.18.3` - WebSocket para comunicação navegador
-- `mssql@^12.2.0` - Driver SQL Server para Node.js
+**Descrição**: Arma uma ou mais partições
 
-**Scripts:**
-```json
-{
-  "test": "echo \"Error: no test specified\" && exit 1"
-}
-```
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-78658yjla" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-armar-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;executar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;idISEP&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;timeout&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">120</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comando&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;armar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;password&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;8790&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;particoes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;inibir&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(247, 140, 108)">5</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">8</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
----
+**Campos**:
+- `password`: Senha de armamento (obrigatório)
+- `particoes`: Array de partições a armar (obrigatório)
+- `inibir`: Array de zonas a inibir (opcional)
 
-## 🔄 Fluxo de Dados Completo
+**Resposta de Sucesso**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-n892yhi4e" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-armar-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resposta&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;armar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;status&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;ok&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;particoes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
-### 1. Inicialização
-```
-1. Usuário executa: node bridge.js
-2. Bridge inicia:
-   - WebSocket Server (8080)
-   - API REST (3000)
-   - HTTP Server (8000)
-   - Conecta ao SQL Server
-   - Conecta ao TCP Viaweb (10.0.20.43:2700)
-   - Envia IDENT
-3. Navegador abre automaticamente
-4. Frontend conecta WebSocket
-5. Frontend busca unidades da API
-6. Popula dropdown
-```
-
-### 2. Seleção de Unidade
-```
-1. Usuário seleciona unidade no dropdown
-2. main.js busca unit.value (ex: "0572")
-3. Formata para 4 dígitos: "0572"
-4. Cria comandos de partições e zonas
-5. Criptografa comandos com AES-256-CBC
-6. Envia via WebSocket para bridge
-7. Bridge descriptografa
-8. Bridge re-criptografa para TCP
-9. Envia ao servidor Viaweb
-10. Servidor responde
-11. Bridge descriptografa resposta TCP
-12. Bridge envia JSON puro via WebSocket
-13. Frontend atualiza UI com partições e zonas
-```
-
-### 3. Armação/Desarmação
-```
-1. Usuário marca partições/zonas
-2. Clica "Armar" ou "Desarmar"
-3. main.js coleta selecionados
-4. Cria comando com senha (8790)
-5. Mesmo fluxo de criptografia/envio
-6. Após 5s, busca status atualizado
-```
-
-### 4. Eventos
-```
-1. Servidor Viaweb envia evento via TCP
-2. Bridge descriptografa
-3. Bridge envia JSON via WebSocket
-4. main.js processEvent(data):
-   - Adiciona a allEvents
-   - Se código 1130 → activeAlarms
-   - Se código falha → activePendentes
-   - Se código restauro → marca resolved
-5. updateEventList() atualiza tabela
-6. main.js envia ACK com ID limpo (só números)
-```
+**Resposta de Erro**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-yjgco4r9o" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-armar-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;erro&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;Senha incorreta&quot;</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
 ---
 
-## 🔐 Segurança e Criptografia
+##### 4.2.3 Desarmar Partições
 
-### AES-256-CBC
-- **Chave:** 256 bits (32 bytes) - `CHAVE` em config.js
-- **IV:** 128 bits (16 bytes) - Dinâmico, atualiza a cada mensagem
-- **Modo:** CBC (Cipher Block Chaining)
-- **Padding:** PKCS7
+**Descrição**: Desarma uma ou mais partições
 
-### Fluxo de IVs
-```
-Envio:
-  ivSend inicial = IV fixo
-  Após cada encrypt: ivSend = últimos 16 bytes do criptografado
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-wvqng9cwq" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-desarm-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;executar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;idISEP&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;timeout&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">120</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comando&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;desarmar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;password&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;8790&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;particoes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
-Recepção:
-  ivRecv inicial = IV fixo
-  Após cada decrypt: ivRecv = últimos 16 bytes do recebido
-```
-
-Isso garante que cada mensagem use um IV diferente, aumentando segurança.
-
----
-
-## 📊 Tipos de Eventos
-
-### Códigos Principais
-- **1130** - Disparo de alarme (🚨 vermelho)
-- **3130** - Restauro de sensor (✅ verde)
-- **1144** - Violação de Tamper (⚠️ laranja)
-- **1401-1402** - Desarmação (🔓 azul)
-- **3401-3403** - Armação (🛡️ azul)
-- **14xx** - Falhas de sistema (⚠️ laranja)
-- **34xx** - Restauros de falha (✅ verde)
-- **16xx** - Testes (ℹ️ ciano)
-
-### Sistema de Agrupamento
-- Eventos com mesmo local + código + zona são agrupados
-- Mostra "primeiro evento (X eventos)" na tabela
-- Clique abre modal para encerrar grupo
+**Campos**:
+- `password`: Senha de desarmamento (obrigatório)
+- `particoes`: Array de partições a desarmar (obrigatório)
 
 ---
 
-## 🎨 UI/UX
+##### 4.2.4 Status Geral
 
-### Cores por Status
-- 🟢 Verde - OK, Armado, Restauro
-- 🔴 Vermelho - Disparo, Aberto, Desarmado
-- 🟠 Laranja - Falha, Tamper, Pendente
-- 🔵 Azul - Ação de usuário, Primário
-- ⚫ Cinza - Inibida, Desabilitado
+**Descrição**: Consulta status completo do equipamento
 
-### Seções Recolhíveis
-- "Centrais de Alarme" - Começa fechada
-- "Eventos" - Começa aberta
-- Clique no header para expandir/recolher
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-gugs68065" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-status-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;executar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;idISEP&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;timeout&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">120</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comando&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;status&quot;</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
-### Responsividade
-- Desktop: 2 colunas (partições | zonas)
-- Tablet: 1 coluna
-- Mobile: Interface adaptada, zonas em coluna única
-
----
-
-## 🐛 Debug e Logs
-
-### Console do Navegador
-```javascript
-🔄 Carregando unidades...
-✅ 146 unidades carregadas
-🔍 ===== SELEÇÃO DE UNIDADE =====
-📤 idISEP que será enviado: 0572
-🚀 fetchPartitionsAndZones chamada...
-```
-
-### Terminal do bridge.js
-```
-🚀 Servidor Bridge iniciado na porta 8080
-📱 [08:00:00] Cliente WebSocket conectado
-📤 WS→TCP (JSON recebido): {...}
-📩 TCP→WS (JSON): {...}
-```
-
-### Níveis de Log
-- 🔄 Carregamento
-- ✅ Sucesso
-- ❌ Erro
-- 📤 Envio
-- 📩 Recebimento
-- 🔍 Debug
+**Resposta**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-h3y4xhcxt" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-status-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resposta&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;status&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;online&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;bateria&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">85</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;sinal&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">4</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;particoes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">0</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">0</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;zonas_ativas&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">12</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
 ---
 
-## 🚀 Performance
+##### 4.2.5 Zonas (Ler Status)
 
-### Cache
-- Unidades: 5 minutos
-- Eventos: Máximo 300 na memória
-- Comandos pendentes: Limpa após resposta
+**Descrição**: Consulta o status de todas as zonas
 
-### Otimizações
-- Debounce na busca de unidades (300ms)
-- Auto-update opcional (30s)
-- Lazy rendering de zonas (8 por coluna)
-- CSS com will-change para animações
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-ij5p44ult" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-zonas-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;executar&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;idISEP&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;timeout&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">120</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comando&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>      </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;zonas&quot;</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+**Resposta**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-4wduzv7nh" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cmd-zonas-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resposta&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;zonas&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;zona&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;status&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;ok&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;tipo&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;PIR&quot;</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;zonas&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;zona&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;status&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;violada&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;tipo&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;Porta&quot;</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>      </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;cmd&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;zonas&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;zona&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">3</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;status&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;ok&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;tipo&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;Vidro&quot;</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span><span>    </span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
 
 ---
 
-## 📱 Compatibilidade
+### 4.3 Ler Configurações Gerais
 
-### Navegado
+**Descrição**: Lê as configurações gerais do Viaweb Receiver
+
+**Enviado por**: server.js (sob demanda)
+
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-21yqgbxkf" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cfg-geral-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;lerGeral&quot;</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+**Resposta de Sucesso**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-78tav3qe4" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;cfg-geral-001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;comentarios&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;nivelLogGeral&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;dividirLog&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">24</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;apagarLogs&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">30</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;usarAcceptEx&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;nivelLogAlarmeNETcom&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">2</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoViawebIniciar&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9000&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoViawebParar&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9001&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoClienteAutorizar&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9010&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoClienteOnline&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9020&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoClienteOffline&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9021&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoMeioOnline&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9030&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codEventoMeioOffline&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;9031&quot;</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+**Campos**:
+- `comentarios`: 1 = salva com comentários, 0 = sem comentários
+- `nivelLogGeral`: Nível de log (0=Network, 1=Debug, 2=Info, 3=Operação, 4=Erro, 5=Nenhum)
+- `dividirLog`: Divide arquivo de log a cada X horas (0 = um por dia)
+- `apagarLogs`: Apaga logs a cada X dias (0 = indefinido)
+- `usarAcceptEx`: 0=WSAAccept(), 1=AcceptEx() (Windows), -1 (Linux)
+- `codEventoXXX`: Códigos de eventos internos (ContactID em hex)
+
+---
+
+### 4.4 Recepção de Eventos
+
+**Descrição**: Eventos gerados pelos equipamentos (zonas violadas, armamento, etc)
+
+**Enviado por**: Viaweb Receiver → server.js
+
+**Formato**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-1ozre6pqo" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;oper&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;15-evt&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;acao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;evento&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;nomeViaweb&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;VIAWEB-COTRIJAL&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;portaViaweb&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(247, 140, 108)">2700</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;recepcao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1736524800</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;dia&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">10</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;mes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;hora&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">14</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;minuto&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">30</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;codigoEvento&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;1130&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;eventoInterno&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;particao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">1</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;zonaUsuario&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">5</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;contaCliente&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;supervisao&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0000&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;isep&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;0572&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;numSerie&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;12345678&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;modelo&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;AMT8000&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;meio&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;GPRS&quot;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>    </span><span class="token" style="color:rgb(128, 203, 196)">&quot;ip&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;192.168.1.100&quot;</span><span>
+</span><span>  </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;eventosPendentes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">3</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;testesPendentes&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">0</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+**Campos Principais**:
+- `id`: Identificador único do evento
+- `codigoEvento`: Código ContactID em hexadecimal (ex: "1130" = zona violada)
+- `eventoInterno`: 1=online, 2=offline, 3=autorização pendente
+- `particao`: Partição afetada
+- `zonaUsuario`: Zona afetada
+- `isep`: ID do equipamento
+- `recepcao`: Timestamp Unix do evento
+- `eventosPendentes`: Quantidade de eventos ainda não processados
+
+**Confirmação Obrigatória (ACK)**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">json</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-xtucimkvl" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-json" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>  </span><span class="token" style="color:rgb(128, 203, 196)">&quot;resp&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token" style="color:rgb(128, 203, 196)">&quot;id&quot;</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&quot;15-evt&quot;</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+**Códigos de Evento Comuns (ContactID)**:
+| Código | Descrição |
+|--------|-----------|
+| 1130   | Zona violada |
+| 1400   | Zona restaurada |
+| 1200   | Partição armada |
+| 1300   | Partição desarmada |
+| 1500   | Bateria baixa |
+| 1600   | Falha de comunicação |
+
+---
+
+## 5. CONFIGURAÇÃO E INSTALAÇÃO
+
+### 5.1 Pré-requisitos
+
+- Node.js v14+ instalado
+- SQL Server 2016+ acessível
+- Acesso à rede do Viaweb Receiver (10.0.20.43:2700)
+- Portas 8090, 3000, 8000 disponíveis
+
+### 5.2 Instalação
+
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">bash</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-z234ms4ap" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-bash" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># 1. Clonar/baixar o projeto</span><span>
+</span><span></span><span class="token" style="color:rgb(255, 203, 139)">cd</span><span> viaweb-cotrijal
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># 2. Instalar dependências</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">npm</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">install</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># 3. Configurar variáveis de ambiente (ver seção 8)</span><span>
+</span><span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Editar .env ou db-config.js</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># 4. Testar conexão com banco</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">node</span><span> test-db.js
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># 5. Iniciar servidor</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">node</span><span> server.js
+</span></code></pre></div>
+
+### 5.3 Verificação de Inicialização
+
+Após executar `node server.js`, você deve ver:
+
+
+✅ Servidor WebSocket iniciado na porta 8090 ✅ API REST iniciada na porta 3000 ✅ Servidor HTTP iniciado na porta 8000 ✅ Conectado ao SQL Server ✅ Cliente TCP conectado ao Viaweb Receiver (10.0.20.43:2700) ✅ IDENT enviado com sucesso ✅ Sistema pronto para receber comandos
+
+---
+
+## 6. ESTRUTURA DE DIRETÓRIOS
+
+
+viaweb-cotrijal/ ├── server.js # Servidor principal ├── db-config.js # Configuração SQL Server ├── test-db.js # Teste de conexão ├── package.json # Dependências Node.js ├── .env # Variáveis de ambiente ├── public/ # Arquivos estáticos (frontend) │ ├── index.html │ ├── css/ │ │ └── style.css │ ├── js/ │ │ ├── app.js │ │ └── websocket-client.js │ └── assets/ │ ├── icons/ │ └── logos/ ├── logs/ # Arquivos de log (gerados) │ ├── server.log │ └── errors.log └── docs/ # Documentação ├── README.md ├── API.md └── PROTOCOLO_VIAWEB.md
+
+---
+
+## 7. VARIÁVEIS DE AMBIENTE
+
+### 7.1 Arquivo .env
+
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">env</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-da88ibtly" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-env" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span># SQL Server
+</span>DB_SERVER=localhost
+<!-- -->DB_DATABASE=viaweb_cotrijal
+<!-- -->DB_USER=sa
+<!-- -->DB_PASSWORD=sua_senha_aqui
+<!-- -->DB_ENCRYPT=true
+<!-- -->DB_TRUST_CERT=true
+<!-- -->
+<!-- --># Viaweb Receiver
+<!-- -->VIAWEB_HOST=10.0.20.43
+<!-- -->VIAWEB_PORT=2700
+<!-- -->
+<!-- --># Criptografia
+<!-- -->CRYPTO_KEY=32_caracteres_chave_aes_256_aqui
+<!-- -->CRYPTO_IV=16_caracteres_iv_aqui
+<!-- -->
+<!-- --># Servidor
+<!-- -->WS_PORT=8090
+<!-- -->REST_PORT=3000
+<!-- -->HTTP_PORT=8000
+<!-- -->
+<!-- --># Logging
+<!-- -->LOG_LEVEL=info
+<!-- -->LOG_FILE=logs/server.log
+</code></pre></div>
+
+### 7.2 Carregamento em server.js
+
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">javascript</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-n4qruilad" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-javascript" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;dotenv&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">config</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">DB_SERVER</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> process</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token property-access">env</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token" style="color:rgb(130, 170, 255)">DB_SERVER</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">DB_DATABASE</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> process</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token property-access">env</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token" style="color:rgb(130, 170, 255)">DB_DATABASE</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">VIAWEB_HOST</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> process</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token property-access">env</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token" style="color:rgb(130, 170, 255)">VIAWEB_HOST</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">VIAWEB_PORT</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> process</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token property-access">env</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token" style="color:rgb(130, 170, 255)">VIAWEB_PORT</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// ... etc</span><span>
+</span></code></pre></div>
+
+---
+
+## 8. CRIPTOGRAFIA AES-256-CBC
+
+### 8.1 Funcionamento
+
+Todas as mensagens TCP entre `server.js` e `Viaweb Receiver` são criptografadas com **AES-256-CBC**.
+
+### 8.2 Fluxo de IV (Initialization Vector)
+
+O IV é **dinâmico** e atualiza a cada mensagem:
+
+#### Envio (server.js → Viaweb Receiver)
+
+Inicializa ivSend com IV fixo (16 bytes)
+Criptografa mensagem com ivSend
+Atualiza ivSend = últimos 16 bytes do criptografado
+Envia criptografado via TCP
+Repete para próxima mensagem
+#### Recepção (Viaweb Receiver → server.js)
+
+Inicializa ivRecv com IV fixo (16 bytes)
+Recebe mensagem criptografada
+Descriptografa com ivRecv
+Atualiza ivRecv = últimos 16 bytes da mensagem recebida
+Processa JSON descriptografado
+Repete para próximo evento
+### 8.3 Implementação em Node.js
+
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">javascript</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-grxw3wwkf" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-javascript" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(127, 219, 202)">const</span><span> crypto </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">require</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;crypto&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Configuração</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">CHAVE</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token maybe-class-name">Buffer</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token module" style="color:rgb(127, 219, 202)">from</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;32_caracteres_chave_aes_256_aqui&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;utf8&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">IV_INICIAL</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token maybe-class-name">Buffer</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token module" style="color:rgb(127, 219, 202)">from</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;16_caracteres_iv_&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;utf8&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(127, 219, 202)">let</span><span> ivSend </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token maybe-class-name">Buffer</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token module" style="color:rgb(127, 219, 202)">from</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(130, 170, 255)">IV_INICIAL</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">let</span><span> ivRecv </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token maybe-class-name">Buffer</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token module" style="color:rgb(127, 219, 202)">from</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(130, 170, 255)">IV_INICIAL</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Criptografar</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">function</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">criptografar</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token parameter">mensagem</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> cipher </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> crypto</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">createCipheriv</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;aes-256-cbc&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">CHAVE</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> ivSend</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span>    </span><span class="token" style="color:rgb(127, 219, 202)">let</span><span> criptografado </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> cipher</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">update</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span>mensagem</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;utf8&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;hex&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span>    criptografado </span><span class="token" style="color:rgb(127, 219, 202)">+=</span><span> cipher</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">final</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;hex&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span>    </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Atualiza IV com últimos 16 bytes do criptografado</span><span>
+</span><span>    ivSend </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token maybe-class-name">Buffer</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token module" style="color:rgb(127, 219, 202)">from</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span>criptografado</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">slice</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(127, 219, 202)">-</span><span class="token" style="color:rgb(247, 140, 108)">32</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;hex&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span>    </span><span class="token control-flow" style="color:rgb(127, 219, 202)">return</span><span> criptografado</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Descriptografar</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">function</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">descriptografar</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token parameter">criptografado</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> decipher </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> crypto</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">createDecipheriv</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;aes-256-cbc&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">CHAVE</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> ivRecv</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span>    </span><span class="token" style="color:rgb(127, 219, 202)">let</span><span> descriptografado </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> decipher</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">update</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span>criptografado</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;hex&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;utf8&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span>    descriptografado </span><span class="token" style="color:rgb(127, 219, 202)">+=</span><span> decipher</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">final</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;utf8&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span>    </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Atualiza IV com últimos 16 bytes do criptografado recebido</span><span>
+</span><span>    ivRecv </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token maybe-class-name">Buffer</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token module" style="color:rgb(127, 219, 202)">from</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span>criptografado</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">slice</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(127, 219, 202)">-</span><span class="token" style="color:rgb(247, 140, 108)">32</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> </span><span class="token" style="color:rgb(173, 219, 103)">&#x27;hex&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span>    </span><span class="token control-flow" style="color:rgb(127, 219, 202)">return</span><span> descriptografado</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+---
+
+## 9. TROUBLESHOOTING
+
+### Problema: "Conexão recusada ao Viaweb Receiver"
+
+**Causa**: IP/porta incorretos ou firewall bloqueando
+
+**Solução**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">bash</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-j5cwxcms3" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-bash" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Testar conectividade</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">ping</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">10.0</span><span>.20.43
+</span><span>telnet </span><span class="token" style="color:rgb(247, 140, 108)">10.0</span><span>.20.43 </span><span class="token" style="color:rgb(247, 140, 108)">2700</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Verificar configuração</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">cat</span><span> db-config.js  </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Conferir VIAWEB_HOST e VIAWEB_PORT</span><span>
+</span></code></pre></div>
+
+---
+
+### Problema: "Erro ao conectar SQL Server"
+
+**Causa**: Credenciais incorretas ou banco indisponível
+
+**Solução**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">bash</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-tz9yn4pkr" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-bash" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Executar teste de conexão</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">node</span><span> test-db.js
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Verificar credenciais em .env</span><span>
+</span><span></span><span class="token" style="color:rgb(130, 170, 255)">cat</span><span> .env
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic"># Testar conectividade SQL</span><span>
+</span><span>sqlcmd </span><span class="token parameter" style="color:rgb(214, 222, 235)">-S</span><span> localhost </span><span class="token parameter" style="color:rgb(214, 222, 235)">-U</span><span> sa </span><span class="token parameter" style="color:rgb(214, 222, 235)">-P</span><span> sua_senha
+</span></code></pre></div>
+
+---
+
+### Problema: "Comando não recebe resposta"
+
+**Causa**: Timeout ou equipamento offline
+
+**Solução**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">javascript</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-7fc6uxg5n" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-javascript" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Aumentar timeout em server.js</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">TIMEOUT_COMANDO</span><span> </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(247, 140, 108)">300</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span> </span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// 300 segundos</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Verificar status do equipamento</span><span>
+</span><span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Enviar comando &quot;status&quot; antes de armar/desarmar</span><span>
+</span></code></pre></div>
+
+---
+
+### Problema: "Eventos não aparecem no frontend"
+
+**Causa**: WebSocket desconectado ou ACK não enviado
+
+**Solução**:
+<div class="widget code-container remove-before-copy"><div class="code-header non-draggable"><span class="iaf s13 w700 code-language-placeholder">javascript</span><div class="code-copy-button"><span class="iaf s13 w500 code-copy-placeholder">Copiar</span><img class="code-copy-icon" src="data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%3E%0A%20%20%3Cpath%20d%3D%22M10.8%208.63V11.57C10.8%2014.02%209.82%2015%207.37%2015H4.43C1.98%2015%201%2014.02%201%2011.57V8.63C1%206.18%201.98%205.2%204.43%205.2H7.37C9.82%205.2%2010.8%206.18%2010.8%208.63Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%204.42999V7.36999C15%209.81999%2014.02%2010.8%2011.57%2010.8H10.8V8.62999C10.8%206.17999%209.81995%205.19999%207.36995%205.19999H5.19995V4.42999C5.19995%201.97999%206.17995%200.999992%208.62995%200.999992H11.57C14.02%200.999992%2015%201.97999%2015%204.42999Z%22%20stroke%3D%22%23717C92%22%20stroke-width%3D%221.05%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" /></div></div><pre id="code-12mugbggt" style="color:white;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;padding:8px;margin:8px;overflow:auto;background:#011627;width:calc(100% - 8px);border-radius:8px;box-shadow:0px 8px 18px 0px rgba(120, 120, 143, 0.10), 2px 2px 10px 0px rgba(255, 255, 255, 0.30) inset"><code class="language-javascript" style="white-space:pre;color:#d6deeb;font-family:Consolas, Monaco, &quot;Andale Mono&quot;, &quot;Ubuntu Mono&quot;, monospace;text-align:left;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;font-size:1em;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none"><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Verificar conexão WebSocket</span><span>
+</span><span></span><span class="token console" style="color:rgb(255, 203, 139)">console</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">log</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(173, 219, 103)">&#x27;Clientes conectados:&#x27;</span><span class="token" style="color:rgb(199, 146, 234)">,</span><span> wss</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token property-access">clients</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token property-access">size</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span>
+<span></span><span class="token" style="color:rgb(99, 119, 119);font-style:italic">// Garantir envio de ACK</span><span>
+</span><span></span><span class="token" style="color:rgb(127, 219, 202)">function</span><span> </span><span class="token" style="color:rgb(130, 170, 255)">enviarACK</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token parameter">idEvento</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span>
+</span><span>    </span><span class="token" style="color:rgb(127, 219, 202)">const</span><span> ack </span><span class="token" style="color:rgb(127, 219, 202)">=</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token literal-property" style="color:rgb(128, 203, 196)">resp</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">[</span><span class="token" style="color:rgb(199, 146, 234)">{</span><span> </span><span class="token literal-property" style="color:rgb(128, 203, 196)">id</span><span class="token" style="color:rgb(127, 219, 202)">:</span><span> idEvento </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">]</span><span> </span><span class="token" style="color:rgb(199, 146, 234)">}</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span>    socketViaweb</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">write</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token" style="color:rgb(130, 170, 255)">criptografar</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span class="token known-class-name" style="color:rgb(255, 203, 139)">JSON</span><span class="token" style="color:rgb(199, 146, 234)">.</span><span class="token method property-access" style="color:rgb(130, 170, 255)">stringify</span><span class="token" style="color:rgb(199, 146, 234)">(</span><span>ack</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">)</span><span class="token" style="color:rgb(199, 146, 234)">;</span><span>
+</span><span></span><span class="token" style="color:rgb(199, 146, 234)">}</span><span>
+</span></code></pre></div>
+
+---
+
+## 10. REFERÊNCIAS E DOCUMENTAÇÃO
+
+### Documentação Oficial Viaweb
+
+- Manual de Operação e Configuração do Viaweb Receiver
+- Especificação do Protocolo TCP/IP Viaweb
+- Códigos de Evento ContactID (ISO 8601)
+
+### Documentação do Projeto
+
+- `docs/API.md` — Referência completa da API REST
+- `docs/PROTOCOLO_VIAWEB.md` — Detalhes do protocolo TCP
+- `docs/FLUXOGRAMAS.md` — Diagramas de fluxo de dados
+
+### Dependências Node.js
+
+- **ws**: WebSocket server
+- **express**: Framework REST
+- **mssql**: Driver SQL Server
+- **crypto**: Criptografia (built-in)
+- **dotenv**: Variáveis de ambiente
+
+---
+
+## 📝 NOTAS IMPORTANTES
+
+1. **Segurança**: Nunca commitar `.env` com credenciais reais no Git
+2. **Backup**: Fazer backup regular do banco de dados SQL Server
+3. **Logs**: Monitorar `logs/server.log` para diagnosticar problemas
+4. **Atualizações**: Manter Node.js e dependências atualizadas
+5. **Testes**: Executar `test-db.js` regularmente para validar conectividade
+
+---
+
+**Última atualização**: Janeiro 2026  
+**Versão**: 1.0  
+**Mantido por**: Equipe Viaweb Cotrijal
