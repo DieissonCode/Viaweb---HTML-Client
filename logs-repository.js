@@ -73,12 +73,12 @@ function formatDateTimeSql(dateObj) {
 
 // Log helper simples
 function logDebug(step, payload) {
-    console.log(`[logs-repo] ${step}:`, payload);
+    //console.log(`[logs-repo] ${step}:`, payload);
 }
 
 // Loga a query + params normalizados
 function logQuery(step, sql, params) {
-    console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
+    //console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
 }
 
 // Garante separador " - " para arma/desarma programado (complemento 0)
