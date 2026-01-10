@@ -1,19 +1,3 @@
-Perfeito! Recebi o arquivo com a operação "lerGeral" do Viaweb Receiver — isso vai ser importante para o README.
-
-Agora vou gerar o README GERAL do projeto Viaweb Cotrijal, seguindo 100% o padrão técnico completo que você já tem, com:
-
-✅ Estrutura de seções claras
-✅ Índice numerado
-✅ Descrições detalhadas
-✅ Blocos de código/JSON
-✅ Fluxogramas quando necessário
-✅ Linguagem técnica e profissional
-✅ Sem mencionar bridge.js
-✅ Tudo focado em server.js como arquivo principal
-
-README.md - VIAWEB COTRIJAL
-Markdown
-Copiar
 # VIAWEB COTRIJAL - PLATAFORMA DE MONITORAMENTO E CONTROLE
 
 ## 📋 ÍNDICE
