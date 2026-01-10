@@ -71,7 +71,7 @@
                          │
          ┌───────────────▼───────────────┐
          │     Viaweb Receiver           │
-         │   (VIAWEB_RECEIVER_ADDRESS)   │
+         │    (servidor remoto)          │
          └───────────────┬───────────────┘
                          │
          ┌───────────────▼───────────────┐
@@ -147,7 +147,7 @@ Frontend (exibe) → Envia ACK
 
 - Node.js v14 ou superior
 - SQL Server 2016 ou superior
-- Acesso à rede do Viaweb Receiver (VIAWEB_RECEIVER_ADDRESS:2700)
+- Acesso à rede do Viaweb Receiver
 - Portas 8090, 3000, 8000 disponíveis
 
 ### Passos
@@ -160,9 +160,8 @@ cd viaweb-cotrijal
 # 2. Instale as dependências
 npm install
 
-# 3. Configure as variáveis de ambiente
-cp .env.example .env
-nano .env  # Edite com suas credenciais
+# 3. Configure o arquivo db-config.js
+nano db-config.js  # Edite com suas credenciais
 
 # 4. Teste a conexão com o banco
 node test-db.js
@@ -180,7 +179,7 @@ Após iniciar, você deve ver:
 ✅ API REST iniciada na porta 3000
 ✅ Servidor HTTP iniciado na porta 8000
 ✅ Conectado ao SQL Server
-✅ Cliente TCP conectado ao Viaweb Receiver (VIAWEB_RECEIVER_ADDRESS:2700)
+✅ Cliente TCP conectado ao Viaweb Receiver
 ✅ IDENT enviado com sucesso
 ✅ Sistema pronto para receber comandos
 ```
@@ -189,55 +188,67 @@ Após iniciar, você deve ver:
 
 ## ⚙️ Configuração
 
-### Arquivo `.env`
-
-```env
-# SQL Server
-DB_SERVER=localhost
-DB_DATABASE=viaweb_cotrijal
-DB_USER=sa
-DB_PASSWORD=sua_senha_aqui
-DB_ENCRYPT=true
-DB_TRUST_CERT=true
-
-# Viaweb Receiver
-VIAWEB_HOST=VIAWEB_RECEIVER_ADDRESS
-VIAWEB_PORT=2700
-
-# Criptografia
-CRYPTO_KEY=32_caracteres_chave_aes_256_aqui
-CRYPTO_IV=16_caracteres_iv_aqui
-
-# Servidor
-WS_PORT=8090
-REST_PORT=3000
-HTTP_PORT=8000
-
-# Logging
-LOG_LEVEL=info
-LOG_FILE=logs/server.log
-```
-
 ### Arquivo `db-config.js`
+
+Configure as credenciais do SQL Server diretamente no arquivo:
 
 ```javascript
 module.exports = {
-  server: process.env.DB_SERVER,
-  database: process.env.DB_DATABASE,
+  server: 'localhost',                    // IP ou hostname do SQL Server
+  database: 'viaweb_cotrijal',           // Nome do banco de dados
   authentication: {
     type: 'default',
     options: {
-      userName: process.env.DB_USER,
-      password: process.env.DB_PASSWORD
+      userName: 'seu_usuario',            // Usuário SQL
+      password: 'sua_senha'               // Senha SQL
     }
   },
   options: {
-    encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_CERT === 'true',
+    encrypt: true,                        // Usar SSL/TLS
+    trustServerCertificate: true,
     connectionTimeout: 30000,
     requestTimeout: 30000
   }
 };
+```
+
+### Configurações do Viaweb Receiver
+
+As configurações de conexão com o Viaweb Receiver estão em `server.js`:
+
+```javascript
+// Viaweb Receiver
+const VIAWEB_HOST = 'IP_DO_SERVIDOR';     // IP do Viaweb Receiver
+const VIAWEB_PORT = 2700;                 // Porta TCP
+
+// Criptografia
+const CHAVE = Buffer.from('sua_chave_32_caracteres_aqui', 'utf8');
+const IV_INICIAL = Buffer.from('seu_iv_16_chars', 'utf8');
+
+// Portas do servidor
+const WS_PORT = 8090;                     // WebSocket
+const REST_PORT = 3000;                   // API REST
+const HTTP_PORT = 8000;                   // Servidor HTTP
+```
+
+### Chave de Criptografia
+
+⚠️ **IMPORTANTE:** A chave e IV de criptografia devem ter exatamente:
+- **Chave:** 32 caracteres (256 bits)
+- **IV:** 16 caracteres (128 bits)
+
+Exemplo de geração segura:
+
+```javascript
+const crypto = require('crypto');
+
+// Gerar chave de 32 bytes (256 bits)
+const chave = crypto.randomBytes(32).toString('hex').substring(0, 32);
+console.log('Chave:', chave);
+
+// Gerar IV de 16 bytes (128 bits)
+const iv = crypto.randomBytes(16).toString('hex').substring(0, 16);
+console.log('IV:', iv);
 ```
 
 ---
@@ -270,7 +281,7 @@ module.exports = {
   "oper": [{
     "id": "cmd-part-001",
     "acao": "executar",
-    "idISEP": "0572",
+    "idISEP": "XXXX",
     "timeout": 120,
     "comando": [{
       "cmd": "particoes"
@@ -299,11 +310,11 @@ module.exports = {
   "oper": [{
     "id": "cmd-armar-001",
     "acao": "executar",
-    "idISEP": "0572",
+    "idISEP": "XXXX",
     "timeout": 120,
     "comando": [{
       "cmd": "armar",
-      "password": "8790",
+      "password": "****",
       "particoes": [1, 2],
       "inibir": [5, 8]
     }]
@@ -318,11 +329,11 @@ module.exports = {
   "oper": [{
     "id": "cmd-desarm-001",
     "acao": "executar",
-    "idISEP": "0572",
+    "idISEP": "XXXX",
     "timeout": 120,
     "comando": [{
       "cmd": "desarmar",
-      "password": "8790",
+      "password": "****",
       "particoes": [1, 2]
     }]
   }]
@@ -336,7 +347,7 @@ module.exports = {
   "oper": [{
     "id": "cmd-zonas-001",
     "acao": "executar",
-    "idISEP": "0572",
+    "idISEP": "XXXX",
     "timeout": 120,
     "comando": [{
       "cmd": "zonas"
@@ -369,7 +380,7 @@ module.exports = {
     "codigoEvento": "1130",
     "particao": 1,
     "zonaUsuario": 5,
-    "isep": "0572",
+    "isep": "XXXX",
     "dia": 10,
     "mes": 1,
     "hora": 14,
@@ -408,8 +419,6 @@ viaweb-cotrijal/
 ├── db-config.js           # Configuração SQL Server
 ├── test-db.js             # Teste de conexão
 ├── package.json           # Dependências Node.js
-├── .env                   # Variáveis de ambiente (não commitar!)
-├── .env.example           # Exemplo de variáveis
 ├── public/                # Arquivos estáticos (frontend)
 │   ├── index.html
 │   ├── css/
@@ -460,8 +469,8 @@ O Initialization Vector (IV) é atualizado a cada mensagem:
 ```javascript
 const crypto = require('crypto');
 
-const CHAVE = Buffer.from('32_caracteres_chave_aes_256_aqui', 'utf8');
-const IV_INICIAL = Buffer.from('16_caracteres_iv_', 'utf8');
+const CHAVE = Buffer.from('sua_chave_32_caracteres_aqui', 'utf8');
+const IV_INICIAL = Buffer.from('seu_iv_16_chars', 'utf8');
 
 let ivSend = Buffer.from(IV_INICIAL);
 let ivRecv = Buffer.from(IV_INICIAL);
@@ -496,11 +505,12 @@ function descriptografar(criptografado) {
 **Solução:**
 ```bash
 # Testar conectividade
-ping VIAWEB_RECEIVER_ADDRESS
-telnet VIAWEB_RECEIVER_ADDRESS 2700
+ping IP_DO_SERVIDOR
+telnet IP_DO_SERVIDOR 2700
 
 # Verificar configuração
-cat .env
+cat db-config.js
+grep VIAWEB_HOST server.js
 ```
 
 ### Erro ao conectar SQL Server
@@ -568,11 +578,12 @@ Contribuições são bem-vindas! Por favor:
 
 ## 📝 Notas Importantes
 
-1. **Segurança:** Nunca commitar `.env` com credenciais reais
+1. **Segurança:** Nunca commitar `db-config.js` com credenciais reais no Git
 2. **Backup:** Fazer backup regular do banco de dados
 3. **Logs:** Monitorar `logs/server.log` para diagnósticos
 4. **Atualizações:** Manter Node.js e dependências atualizadas
 5. **Testes:** Executar `test-db.js` regularmente
+6. **Chaves:** Armazene as chaves de criptografia em local seguro
 
 ---
 
@@ -584,7 +595,6 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 ## 📞 Suporte
 
-- **Email:** dsantos.dev@gmail.com
 - **Issues:** [GitHub Issues](https://github.com/seu-usuario/viaweb-cotrijal/issues)
 
 ---
