@@ -824,19 +824,24 @@ function isValidISEP(idISEP) {
 }
 
 (async () => {
-    try { units = await window.getUnits(); populateUnitSelect(); }
-    catch (err) { console.error('❌ Erro ao carregar unidades:', err); unitSelect.innerHTML = 'Erro ao carregar unidades'; }
-})();
-
-(async () => {
-    try { users = await window.UsersDB.getUsers(); }
-    catch (err) { console.error('❌ Erro ao carregar usuários:', err); }
-})();
-
-// Carrega histórico inicial ao abrir a página
-document.addEventListener('DOMContentLoaded', () => {
+    try { 
+        units = await window.getUnits(); 
+        populateUnitSelect(); 
+    } catch (err) { 
+        console.error('❌ Erro ao carregar unidades:', err); 
+        unitSelect.innerHTML = 'Erro ao carregar unidades'; 
+    }
+    
+    try { 
+        await window.UsersDB.getUsers(); 
+        console.log('✅ Usuários carregados antes do histórico');
+    } catch (err) { 
+        console.error('❌ Erro ao carregar usuários:', err); 
+    }
+    
+    // Só carrega histórico DEPOIS dos usuários
     loadInitialHistory(300);
-});
+})();
 
 const themeToggle = document.getElementById('theme-toggle');
 const savedTheme = localStorage.getItem('theme');

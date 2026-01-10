@@ -8,6 +8,7 @@ const dbConfig = require('./db-config');
 const logsDbConfig = require('./logs-db-config');
 const { spawn } = require('child_process');
 const { LogsRepository } = require('./logs-repository');
+const ViawebCommands = require('./viaweb-commands');
 const eventLocks = new Map(); // key -> { operador, timestamp }
 const LOCK_TIMEOUT = 60000; // 60s sem keepalive = auto-release
 const wsEventDedupeCache = new Map();
@@ -351,7 +352,6 @@ app.post('/api/logs/close', async (req, res) => {
 	}
 });
 
-// NOVO: histórico recente para hidratar o front após reload
 app.get('/api/logs/events', async (req, res) => {
 	const limit = Number(req.query.limit) || 300;
 	try {
@@ -544,10 +544,11 @@ setInterval(() => {
 
 const httpServer = app.listen(HTTP_PORT, '0.0.0.0', () => {
 	logger.info(`\n🌐 Servidor HTTP rodando em:`);
-	logger.info(`   →		  http://localhost`);
-	logger.info(`   →		  http://192.9.100.100`);
-	logger.info(`   → API:	 http://192.9.100.100/api/units`);
-	logger.info(`   → Metrics: http://192.9.100.100/api/metrics`);
+	logger.info(`   →		http://localhost`);
+	logger.info(`   →		http://192.9.100.100`);
+	logger.info(`   → Units:		http://192.9.100.100/api/units`);
+	logger.info(`   → Users:		http://192.9.100.100/api/users`);
+	logger.info(`   → Metrics:	http://192.9.100.100/api/metrics`);
 });
 
 const wss = new WebSocket.Server({ host: '0.0.0.0', port: WS_PORT });
@@ -559,6 +560,52 @@ logger.info(`🔗 Redirecionando para ${TCP_HOST}:${TCP_PORT}\n`);
 
 const HEARTBEAT_INTERVAL = 30000;
 const HEARTBEAT_TIMEOUT = 60000;
+async function getUserFromDb(isep, idUsuario) {
+    if (!idUsuario || idUsuario <= 6) return null;
+    
+    try {
+        const pool = await connectDatabase();
+        const result = await pool.request()
+            .input('isep', mssql.NVarChar(10), String(isep))
+            .input('idUsuario', mssql.Int, Number(idUsuario))
+            .query(`
+                SELECT TOP 1
+                    a.ID_USUARIO,
+                    a.NOME AS matricula,
+                    c.nome,
+                    c.cargo
+                FROM [viaweb].[Programação].[dbo].[USUARIOS] a
+                LEFT JOIN [viaweb].[Programação].[dbo].[INSTALACAO] b
+                    ON a.ID_INSTALACAO = b.ID_INSTALACAO
+                LEFT JOIN [ASM].[dbo].[_colaboradores] c
+                    ON a. NOME = c.matricula
+                WHERE b. NUMERO = @isep
+                  AND a.ID_USUARIO = @idUsuario
+                  AND LEN(c.nome) > 0
+            `);
+        
+        return result.recordset[0] || null;
+    } catch (err) {
+        logger.error('❌ Erro ao buscar usuário:  ' + err.message);
+        return null;
+    }
+}
+
+function formatUserName(user) {
+    if (!user) return null;
+    const nome = user.nome || 'Sem nome';
+    const cargo = user.cargo ?  ` (${toTitleCase(user.cargo)})` : '';
+    return `${nome}${cargo}`;
+}
+
+function toTitleCase(str) {
+    return String(str)
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(' ');
+}
 
 async function saveEventFromTcp(op) {
     const cod = op.codigoEvento || 'N/A';
@@ -571,90 +618,102 @@ async function saveEventFromTcp(op) {
     
     const rawComplement = (op.zonaUsuario !== undefined ?  op.zonaUsuario : op.complemento);
     const hasComplemento = rawComplement !== undefined && rawComplement !== null;
-    let zonaUsuario = hasComplemento ?  Number(rawComplement) : 0;
+    let zonaUsuario = hasComplemento ? Number(rawComplement) : 0;
     if (Number.isNaN(zonaUsuario)) zonaUsuario = 0;
     
     const part = op.particao || 1;
-    const local = op.isep || 'N/A';
+    const local = op. isep || 'N/A';
     const clientId = op.isep || op.contaCliente || '';
     let ts = op.recepcao || Date.now();
     if (ts < 10000000000) ts *= 1000;
     
-    const event = {
-        codigoEvento: cod,
-        codigo:  cod,
-        complemento: hasComplemento ? zonaUsuario : 0,
-        particao:  part,
-        local: local,
-        isep: local,
-        clientId:  clientId,
-        timestamp: ts,
-        descricao:  op.descricao || null
+    // Códigos de arm/disarm
+    const armDisarmCodes = ['1401','1402','1403','1404','1405','1406','1407','1408','3401','3402','3403','3404','3405','3406','3407','3408'];
+    const tipos = {
+        0: '[Horário Programado]',
+        1: '[Monitoramento]',
+        2: '[Facilitador]',
+        3: '[Senha de Uso Único]',
+        4: '[Senha de Uso Único]',
+        5: '[Senha de Uso Único]',
+        6: '[TI - Manutenção]'
     };
     
-    // ========== Tenta salvar no banco ==========
-    let dbSuccess = false;
-    let savedId = null;
+    // Monta descrição base
+    const isArmDisarm = armDisarmCodes. includes(cod);
+    let descricao = null;
+    let userName = null;
+    let userId = null;
+    let userMatricula = null;
+    
+    if (isArmDisarm) {
+        const baseDesc = cod. startsWith('3') ? 'Armado - ' : 'Desarmado - ';
+        
+        if (tipos[zonaUsuario]) {
+            descricao = `${baseDesc}${tipos[zonaUsuario]}`;
+        } else if (zonaUsuario > 6) {
+            // Busca usuário no banco
+            const userData = await getUserFromDb(local, zonaUsuario);
+            
+            if (userData) {
+                userName = formatUserName(userData);
+                userId = userData.ID_USUARIO;
+                userMatricula = userData.matricula;
+                descricao = `${baseDesc}${userName}`;
+            } else {
+                descricao = `${baseDesc}Usuário ID ${zonaUsuario} Não Cadastrado`;
+            }
+        }
+    }
+    
+    const event = {
+        codigoEvento:  cod,
+        codigo: cod,
+        complemento: hasComplemento ? zonaUsuario : 0,
+        particao: part,
+        local: local,
+        isep: local,
+        clientId: clientId,
+        timestamp: ts,
+        descricao: descricao,
+        userName: userName,
+        userId: userId,
+        userMatricula: userMatricula
+    };
     
     try {
-        savedId = await logsRepo.saveIncomingEvent(event);
+        const savedId = await logsRepo.saveIncomingEvent(event);
+        
         if (savedId) {
-            dbSuccess = true;
-            logger.info(`💾 Evento salvo:  ${cod} | ISEP: ${local} | ID: ${savedId}`);
+            logger.info(`💾 Evento salvo:  ${cod} | ISEP:  ${local} | ID: ${savedId}`);
         } else {
-            dbSuccess = true; // Duplicado não é erro
-            logger.debug(`⏭️ Evento duplicado ignorado: ${cod} | ISEP:  ${local}`);
+            logger.debug(`⏭️ Evento duplicado ignorado: ${cod} | ISEP: ${local}`);
         }
-    } catch (dbErr) {
-        dbSuccess = false;
-        logger.error(`❌ FALHA ao salvar no banco: ${cod} | ISEP: ${local} | Erro: ${dbErr.message}`);
-        metrics.recordError();
-    }
-
-    // Opção 2: Só envia ACK se salvou com sucesso (descomente se preferir)
-    if (dbSuccess) {
+        
         sendAckToViaweb(eventId);
-    } else {
-        logger.warn(`⚠️ ACK NÃO enviado (falha no BD): ${eventId}`);
+        return { success:  true, savedId };
+        
+    } catch (err) {
+        logger.error(`❌ FALHA BD: ${cod} | ISEP: ${local} | ${err.message}`);
+        metrics.recordError();
+        return { success: false, error:  err.message };
     }
-
-    return { success:  dbSuccess, savedId };
 }
 
 function sendAckToViaweb(eventId) {
-    if (! eventId) return;
-    
-    const cleanId = String(eventId).replace(/-(evento|evento-)/g, '').replace(/\D/g, '');
-    const ackPayload = JSON.stringify({ resp: [{ id:  cleanId }] });
+    if (!eventId) return;
+
+    const ackCommand = ViawebCommands.createAckCommand(eventId);
+    const ackPayload = JSON.stringify(ackCommand);
     
     if (globalTcpClient && globalTcpClient.writable) {
         try {
             const encrypted = encrypt(ackPayload, globalKeyBuffer, globalIvSend);
             globalIvSend = encrypted.slice(-16);
-            globalTcpClient. write(encrypted);
-            logger.debug(`✅ ACK enviado:  ${cleanId}`);
+            globalTcpClient.write(encrypted);
+            logger.info(`✅ ACK enviado: ${eventId}`); // ← INFO para ver nos logs
         } catch (e) {
-            logger.error('❌ Erro ao enviar ACK:  ' + e.message);
-        }
-    } else {
-        logger.warn('⚠️ TCP não disponível para enviar ACK');
-    }
-}
-
-function sendAckToViaweb(eventId) {
-    if (! eventId) return;
-    const cleanId = String(eventId).replace(/-(evento|evento-)/g, '').replace(/\D/g, '');
-    
-    const ackPayload = JSON.stringify({ resp: [{ id: cleanId }] });
-    
-    if (globalTcpClient && globalTcpClient.writable) {
-        try {
-            const encrypted = encrypt(ackPayload, globalKeyBuffer, globalIvSend);
-            globalIvSend = encrypted.slice(-16);
-            globalTcpClient. write(encrypted);
-            logger.debug(`✅ ACK enviado para Viaweb: ${cleanId}`);
-        } catch (e) {
-            logger.error('❌ Erro ao enviar ACK:  ' + e.message);
+            logger.error('❌ Erro ao enviar ACK: ' + e.message);
         }
     } else {
         logger.warn('⚠️ TCP não disponível para enviar ACK');
@@ -686,18 +745,8 @@ wss.on('connection', (ws) => {
 			if (!tcpIdentSent) {
 				setTimeout(() => {
 					const randomNum = Math.floor(Math.random() * 999999) + 1;
-					const identJson = {
-						"a": randomNum,
-						"oper": [{
-							"id": "ident-1",
-							"acao": "ident",
-							"nome": "Viaweb Cotrijal",
-							"serializado": 1,
-							"retransmite": 60,
-							"limite": 0
-						}]
-					};
-					const encrypted = encrypt(JSON.stringify(identJson), globalKeyBuffer, globalIvSend);
+					const identCommand = ViawebCommands.createIdentCommand("Viaweb Cotrijal", 1, 60, 0);
+					const encrypted = encrypt(JSON.stringify(identCommand), globalKeyBuffer, globalIvSend);
 					globalIvSend = encrypted.slice(-16);
 					globalTcpClient.write(encrypted);
 					tcpIdentSent = true;
@@ -850,3 +899,433 @@ process.on('SIGINT', async () => {
 
 logger.info('\n✅ Sistema Viaweb Cotrijal iniciado com sucesso!');
 logger.info('📊 Logs em tempo real ativados\n');
+
+/*						DOCUMENTAÇÃO DO server.js
+	================================================================================
+
+	📋 ÍNDICE:
+		---------
+		1. VARIÁVEIS GLOBAIS
+		2. FUNÇÕES DE CRIPTOGRAFIA
+		3. FUNÇÕES DE BANCO DE DADOS
+		4. MIDDLEWARE EXPRESS
+		5. AUTENTICAÇÃO
+		6. ROTAS API
+		7. FUNÇÕES TCP/VIAWEB
+		8. HANDLERS WEBSOCKET
+		9. INICIALIZAÇÃO
+
+
+	================================================================================
+	1. VARIÁVEIS GLOBAIS
+
+		eventLocks: Map()
+			- Armazena locks de eventos sendo atendidos
+			- Estrutura: eventKey -> { operador, timestamp }
+			- Usado para prevenir atendimentos simultâneos
+
+		wsEventDedupeCache: Map()
+			- Cache de deduplicação de eventos no WebSocket
+			- Evita enviar eventos duplicados aos clientes
+			- TTL: 2 minutos (WS_DEDUPE_TTL)
+
+		globalTcpClient: net.Socket
+			- Conexão TCP única compartilhada com servidor Viaweb
+			- Reutilizada por todos os clientes WebSocket
+
+		globalKeyBuffer: Buffer
+			- Chave AES-256 em formato binário para criptografia
+			- Derivada da constante CHAVE (hex)
+
+		globalIvSend: Buffer
+			- IV (Initialization Vector) para envio de dados
+			- Atualizado a cada criptografia (CBC mode)
+
+		globalIvRecv: Buffer
+			- IV para recepção de dados
+			- Atualizado a cada descriptografia
+
+		tcpRecvBuffer: Buffer
+			- Buffer de acumulação para dados TCP fragmentados
+			- Garante blocos completos de 16 bytes antes de descriptografar
+
+		dbPool: mssql.ConnectionPool
+			- Pool de conexões para banco ASM (unidades/usuários)
+
+		logsDbPool: mssql.ConnectionPool
+			- Pool de conexões para banco Logs (eventos/encerramentos)
+
+		logsRepo: LogsRepository
+			- Instância do repositório de logs
+			- Gerencia salvamento de eventos e encerramentos
+
+
+	================================================================================
+	2. FUNÇÕES DE CRIPTOGRAFIA
+
+		encrypt(plainText, keyBuffer, ivBuffer): Buffer
+			- Criptografa texto usando AES-256-CBC
+			- Adiciona padding PKCS7 manualmente
+			- Retorna: dados criptografados em Buffer
+			- Exemplo: encrypt('{"resp":[{"id":"123"}]}', key, iv)
+
+		decrypt(encryptedBuffer, keyBuffer, ivBuffer): String
+			- Descriptografa dados AES-256-CBC
+			- Remove padding PKCS7
+			- Retorna: string JSON descriptografada
+			- Exemplo: decrypt(buffer, key, iv) -> '{"oper":[...]}'
+
+		hexToBuffer(hexString): Buffer
+			- Converte string hexadecimal para Buffer binário
+			- Usado para converter CHAVE e IV de config
+			- Exemplo: hexToBuffer('94EF1C59...') -> Buffer
+
+		formatHex(buffer, maxBytes=128): String
+			- Formata Buffer como string hex legível (espaçada)
+			- Usado para debug/logging
+			- Exemplo: '94 ef 1c 59 21 13 e8 d2 ...'
+
+
+	================================================================================
+	3. FUNÇÕES DE BANCO DE DADOS
+
+		connectDatabase(): Promise<ConnectionPool>
+			- Conecta ao banco ASM (unidades/usuários)
+			- Singleton: retorna pool existente ou cria novo
+			- Usado por: /api/units, /api/users
+
+		connectLogsDatabase(): Promise<ConnectionPool>
+			- Conecta ao banco Logs (eventos/encerramentos)
+			- Singleton: retorna pool existente ou cria novo
+			- Usado por: logsRepo, rotas /api/logs/*
+
+		getUserFromDb(isep, idUsuario): Promise<Object|null>
+			- Busca dados de usuário no banco ASM
+			- Retorna: { ID_USUARIO, matricula, nome, cargo }
+			- Usado por: saveEventFromTcp para enriquecer eventos arm/disarm
+			- Exemplo: getUserFromDb('0066', 21) -> { nome: 'João Silva', cargo: 'Fiscal' }
+
+		formatUserName(user): String|null
+			- Formata nome de usuário com cargo em Title Case
+			- Retorna: "Nome Completo (Cargo Formatado)"
+			- Exemplo: formatUserName(userData) -> "João Silva (Fiscal De Caixa)"
+
+		toTitleCase(str): String
+			- Converte string para Title Case
+			- Exemplo: "fiscal de caixa" -> "Fiscal De Caixa"
+
+
+	================================================================================
+	4. MIDDLEWARE EXPRESS
+
+		express.json({ limit: '10kb' })
+			- Parser de JSON para requests
+			- Limite de 10KB por segurança
+
+		rateLimiter(req, res, next)
+			- Limita requisições por IP
+			- 100 requests por minuto por IP
+			- Retorna 429 (Too Many Requests) se exceder
+
+		CORS middleware
+			- Controla origens permitidas (CORS_WHITELIST)
+			- Permite: GET, POST, OPTIONS
+			- Headers: Content-Type
+
+
+	================================================================================
+	5. AUTENTICAÇÃO
+
+		escapePw(str): String
+			- Escapa aspas simples em senhas
+			- Previne SQL injection no PowerShell
+			- Exemplo: "pass'word" -> "pass''word"
+
+		authenticateAd(username, password, domain='Cotrijal'): Promise<Boolean>
+			- Valida credenciais no Active Directory
+			- Usa PowerShell + System.DirectoryServices.AccountManagement
+			- Retorna: true se credenciais válidas, false caso contrário
+			- Exemplo: authenticateAd('joao.silva', 'senha123') -> true
+
+
+	================================================================================
+	6. ROTAS API
+
+		POST /api/login
+			- Autentica usuário no AD
+			- Body: { username, password }
+			- Retorna: { success: true, user: {...} }
+
+		POST /api/logs/event
+			- Salva evento único no banco Logs
+			- Body: { codigoEvento, isep, complemento, ... }
+			- Retorna: { success: true, eventId: 123 }
+
+		POST /api/logs/close
+			- Salva encerramento de evento
+			- Notifica todos os clientes WebSocket
+			- Body: { event: {...}, closure: {...} }
+			- Retorna: { success: true }
+
+		GET /api/logs/events?limit=300
+			- Retorna últimos N eventos do banco
+			- Usado para hidratar interface após reload
+			- Retorna: { success: true, data: [...] }
+
+		POST /api/logs/lock
+			- Adquire lock em evento para atendimento
+			- Impede atendimentos simultâneos
+			- Body: { eventKey, operador }
+			- Retorna: { success: true, locked: true, lockedBy: 'Operador' }
+
+		POST /api/logs/unlock
+			- Libera lock de evento
+			- Body: { eventKey, operador }
+			- Retorna: { success: true }
+
+		GET /api/units
+			- Lista todas as unidades cadastradas
+			- Query: SELECT * FROM INSTALACAO
+			- Retorna: { success: true, data: [...] }
+
+		GET /api/users
+			- Lista usuários com JOIN de colaboradores
+			- Combina dados de Viaweb + ASM
+			- Retorna: { success: true, data: [...] }
+
+		GET /api/health
+			- Health check do servidor
+			- Retorna: { status: 'ok', timestamp, uptime }
+
+		GET /api/metrics
+			- Métricas do servidor (se disponível)
+			- Retorna: eventos, comandos, conexões, erros
+
+
+	================================================================================
+	7. FUNÇÕES TCP/VIAWEB
+
+		saveEventFromTcp(op): Promise<Object>
+			- Processa evento recebido do servidor Viaweb via TCP
+			- Enriquece com dados de usuário se for arm/disarm
+			- Salva no banco via logsRepo.saveIncomingEvent()
+			- Envia ACK de volta ao Viaweb
+			- Retorna: { success: true, savedId: 123 } ou { success: false, error: '...' }
+			
+			Fluxo:
+			1. Valida código do evento (1412 = skip)
+			2. Normaliza complemento/zona/usuário
+			3. Se arm/disarm: busca dados do usuário no BD
+			4. Monta objeto event com todos os campos
+			5. Salva no banco
+			6. Envia ACK
+			
+			Exemplo de event:
+			{
+				codigoEvento: '3401',
+				complemento: 21,
+				particao: 1,
+				local: '0066',
+				timestamp: 1767883588000,
+				descricao: 'Armado - João Silva (Fiscal)',
+				userName: 'João Silva (Fiscal)',
+				userId: 21,
+				userMatricula: '16694'
+			}
+
+		sendAckToViaweb(eventId)
+			- Envia ACK ao servidor Viaweb
+			- Confirma recebimento de evento
+			- Remove sufixos '-evento' do ID
+			- Usa ViawebCommands.createAckCommand()
+			- Criptografa e envia via TCP
+			- Exemplo: sendAckToViaweb('4860-evento') -> envia {"resp":[{"id":"4860"}]}
+
+		pruneWsDedupeCache()
+			- Remove entradas expiradas do cache de deduplicação WS
+			- Roda automaticamente antes de verificar duplicatas
+			- Libera memória de eventos antigos
+
+		shouldSendToClients(op): Boolean
+			- Verifica se evento já foi enviado aos clientes WS
+			- Previne duplicatas usando cache
+			- Retorna: true se deve enviar, false se é duplicata
+			- Key format: "codigo-isep-complemento-timestamp"
+
+
+	================================================================================
+	8. HANDLERS WEBSOCKET
+
+		wss.on('connection', (ws) => {...})
+			- Handler de nova conexão WebSocket
+			- Cria conexão TCP com Viaweb se não existir
+			- Envia IDENT ao Viaweb
+			- Configura IVs individuais por cliente (não usado atualmente)
+			
+			Sub-handlers:
+			
+			ws.on('pong')
+				- Marca cliente como ativo (heartbeat)
+			
+			globalTcpClient.on('data')
+				- Recebe dados criptografados do Viaweb via TCP
+				- Acumula em buffer até ter blocos completos (múltiplos de 16)
+				- Descriptografa quando tem blocos completos
+				- Processa eventos (saveEventFromTcp)
+				- Verifica deduplicação (shouldSendToClients)
+				- Encaminha para clientes WebSocket
+				
+				Fluxo do buffer:
+				1. Dados chegam fragmentados: [23 bytes]
+				2. Acumula: tcpRecvBuffer = [23 bytes]
+				3. Não é múltiplo de 16, aguarda
+				4. Mais dados: [16 bytes]
+				5. Total: 39 bytes
+				6. Processa 32 bytes (2 blocos completos)
+				7. Guarda 7 bytes para próxima iteração
+			
+			globalTcpClient.on('error')
+				- Loga erros TCP
+				- Registra métrica de erro
+			
+			globalTcpClient.on('close')
+				- Limpa estado ao fechar TCP
+				- Reseta tcpRecvBuffer
+				- Marca tcpIdentSent = false
+			
+			ws.on('message')
+				- Recebe comando do cliente WebSocket
+				- Criptografa e envia ao Viaweb via TCP
+				- Usado para: armar, desarmar, consultar status
+			
+			ws.on('close')
+				- Loga desconexão de cliente
+				- Registra métrica
+			
+			ws.on('error')
+				- Loga erros WebSocket
+
+		heartbeatInterval
+			- Verifica conexões WebSocket a cada 30s
+			- Termina conexões que não responderam ao ping
+			- Previne conexões "zumbi"
+
+
+	================================================================================
+	9. INICIALIZAÇÃO
+
+		setInterval(lock cleanup, 60s)
+			- Libera locks expirados (sem keepalive por 60s)
+			- Notifica clientes WS sobre unlock
+
+		app.listen(HTTP_PORT, '0.0.0.0')
+			- Inicia servidor HTTP na porta 80
+			- Serve arquivos estáticos (HTML/CSS/JS)
+			- Expõe rotas API
+
+		wss = new WebSocket.Server({ host: '0.0.0.0', port: WS_PORT })
+			- Inicia servidor WebSocket na porta 8090
+			- Aceita conexões de clientes
+			- Bridge entre clientes e servidor Viaweb TCP
+
+		process.on('SIGINT')
+			- Handler de shutdown gracioso (Ctrl+C)
+			- Fecha pools de banco
+			- Destrói conexão TCP
+			- Exit com código 0
+
+
+	================================================================================
+	FLUXO DE UM EVENTO COMPLETO
+
+		1. RECEPÇÃO
+		Viaweb TCP → globalTcpClient.on('data')
+		
+		2. BUFFER
+		Acumula em tcpRecvBuffer até ter múltiplos de 16 bytes
+		
+		3. DESCRIPTOGRAFIA
+		decrypt(dataToDecrypt, globalKeyBuffer, globalIvRecv)
+		
+		4. PARSE
+		JSON.parse(decrypted) → { oper: [{ acao: 'evento', ... }] }
+		
+		5. PROCESSAMENTO
+		saveEventFromTcp(op):
+			- Busca usuário no BD (se arm/disarm)
+			- Enriquece descrição
+			- logsRepo.saveIncomingEvent()
+			- sendAckToViaweb()
+		
+		6. DEDUPLICAÇÃO WS
+		shouldSendToClients(op) → verifica cache
+		
+		7. BROADCAST
+		wss.clients.forEach() → envia para todos clientes WebSocket
+		
+		8. FRONTEND
+		Cliente recebe evento → processEvent() → updateEventList()
+
+
+	================================================================================
+	DEPENDÊNCIAS
+
+		Módulos Node.js:
+		- ws: WebSocket server
+		- net: Conexões TCP raw
+		- crypto: AES-256-CBC encryption
+		- express: Servidor HTTP + API REST
+		- mssql: Driver SQL Server
+		- child_process: Executar PowerShell (AD auth)
+
+		Módulos locais:
+		- ./db-config: Config banco ASM
+		- ./logs-db-config: Config banco Logs
+		- ./logs-repository: CRUD de eventos/encerramentos
+		- ./logger: Winston logger (opcional)
+		- ./metrics: Coletor de métricas (opcional)
+		- ./viaweb-commands: Comandos protocolo Viaweb
+
+
+	================================================================================
+	VARIÁVEIS DE AMBIENTE / CONSTANTES
+
+		HTTP_PORT: 80
+			- Porta do servidor HTTP
+
+		WS_PORT: 8090
+			- Porta do servidor WebSocket
+
+		TCP_HOST: '10.0.20.43'
+			- IP do servidor Viaweb
+
+		TCP_PORT: 2700
+			- Porta do servidor Viaweb
+
+		CHAVE: String (hex)
+			- Chave AES-256 para criptografia
+
+		IV: String (hex)
+			- IV inicial para AES-CBC
+
+		CORS_WHITELIST: Array
+			- Origens permitidas para CORS
+
+		LOCK_TIMEOUT: 60000 (ms)
+			- Timeout de lock de eventos
+
+		WS_DEDUPE_TTL: 120000 (ms)
+			- TTL do cache de deduplicação WS
+
+		HEARTBEAT_INTERVAL: 30000 (ms)
+			- Intervalo de ping aos clientes WS
+
+		RATE_LIMIT_WINDOW: 60000 (ms)
+			- Janela de rate limiting
+
+		MAX_REQUESTS_PER_WINDOW: 100
+			- Máximo de requests por IP por minuto
+
+
+	================================================================================
+*/

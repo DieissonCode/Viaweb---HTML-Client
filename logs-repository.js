@@ -99,7 +99,6 @@ class LogsRepository {
         this.getPool = getPoolFn;
     }
 
-    // Salva evento na chegada (sem closure)
     async saveIncomingEvent(event) {
         if (!event) return null;
         const pool = await this.getPool();
@@ -115,7 +114,6 @@ class LogsRepository {
         let descricao = normalizeText(event.descricao);
         descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
 
-        // ✅ PRESERVA CAMPOS DE USUÁRIO NO RAW EVENT
         const normalizedEvent = { 
             ...event, 
             complemento,
@@ -125,7 +123,7 @@ class LogsRepository {
         };
         const rawEvent = JSON.stringify(normalizedEvent || {});
 
-        // Dedup em memória (sem consulta ao BD)
+        // Dedup em memória
         pruneDedupeCache();
         const dedupeKey = makeDedupeKey(codigo, isep, complemento, dataEventoStr);
         if (dedupeCache.has(dedupeKey)) {
@@ -134,12 +132,24 @@ class LogsRepository {
         }
         dedupeCache.set(dedupeKey, { ts: Date.now(), count: 1 });
 
+        // ✅ CORREÇÃO: Adiciona DataHora na query
         const sql = `
-            INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, RawEvent)
+            INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, DataHora, RawEvent)
             OUTPUT INSERTED.Id
-            VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @RawEvent);
+            VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), GETDATE(), @RawEvent);
         `;
-        const params = { Codigo: codigo, CodigoEvento: codigo, Complemento: complemento, Particao: particao, Local: local, ISEP: isep, Descricao: descricao, DataEventoStr: dataEventoStr, RawEvent: rawEvent };
+        
+        const params = { 
+            Codigo: codigo, 
+            CodigoEvento: codigo, 
+            Complemento: complemento, 
+            Particao: particao, 
+            Local: local, 
+            ISEP: isep, 
+            Descricao: descricao, 
+            DataEventoStr: dataEventoStr, 
+            RawEvent: rawEvent 
+        };
         logQuery('event(incoming)', sql, params);
 
         const result = await pool.request()
