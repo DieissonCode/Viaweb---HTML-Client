@@ -1,65 +1,49 @@
-﻿const mssql = require('mssql');
+﻿﻿﻿const mssql = require('mssql');
 
-// Cache simples em memória para deduplicação (evita consultas ao BD)
-const DEDUPE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-const dedupeCache = new Map(); // key -> { ts, count }
+// Simple in‑memory cache for deduplication (5 min TTL)
+const DEDUPE_TTL_MS = 5 * 60 * 1000;
+const dedupeCache = new Map(); // key → { ts, count }
 
 function pruneDedupeCache() {
     const now = Date.now();
     for (const [key, val] of dedupeCache.entries()) {
-        if (!val || !val.ts || now - val.ts > DEDUPE_TTL_MS) dedupeCache.delete(key);
+        if (!val?.ts || now - val.ts > DEDUPE_TTL_MS) dedupeCache.delete(key);
     }
 }
 
 function normalizeComplemento(comp) {
     if (comp === undefined || comp === null || comp === '') return '0';
     const s = String(comp).trim();
-    if (s === '-') return '0';
-    return s;
+    return s === '-' ? '0' : s;
 }
 
 function makeDedupeKey(codigo, isep, complemento, dataEventoStr) {
-    const comp = normalizeComplemento(complemento);
-    return `${codigo}|${isep}|${comp}|${dataEventoStr}`;
+    return `${codigo}|${isep}|${complemento}|${dataEventoStr}`;
 }
 
 function normalizeText(val) {
-    return (val === null || val === undefined) ? '' : String(val);
+    return val == null ? '' : String(val);
 }
 
-// ✅ CORRIGIDO: Converte timestamp para Date
+/* ---------- Date handling ---------- */
+// Convert any timestamp (seconds or ms) to a Date object (GMT‑3 is handled later by SQL)
 function toDateGmt3(rawTs) {
-    // Se for null/undefined, retorna agora
-    if (rawTs === null || rawTs === undefined) {
-        return new Date();
-    }
-
-    // Tenta converter para número
+    if (rawTs == null) return new Date();
     const num = Number(rawTs);
-    
-    // Se não é um número válido, retorna agora
-    if (Number.isNaN(num) || !Number.isFinite(num)) {
-        console.warn('[logs-repo] ⚠️ Timestamp inválido recebido:', rawTs, '- usando Date.now()');
+    if (!Number.isFinite(num)) {
+        console.warn('[logs-repo] ⚠️ Invalid timestamp:', rawTs);
         return new Date();
     }
-
-    // Se é muito pequeno (provavelmente em segundos), converte para ms
-    if (num < 10000000000) {
-        return new Date(num * 1000);
-    }
-
-    // Já está em ms
-    return new Date(num);
+    // If the value looks like seconds, multiply by 1000
+    return new Date(num < 1e10 ? num * 1000 : num);
 }
 
-// Formata Date em string SQL-safe (yyyy-MM-dd HH:mm:ss.SSS)
+// Format a Date as a SQL‑compatible string (yyyy‑MM‑dd HH:mm:ss.SSS)
 function formatDateTimeSql(dateObj) {
-    // Valida se é uma data válida
-    if (!dateObj || !(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
-        console.warn('[logs-repo] ⚠️ Date inválido recebido:', dateObj, '- usando Date.now()');
+    if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
+        console.warn('[logs-repo] ⚠️ Invalid Date object, using now');
         dateObj = new Date();
     }
-
     const pad = (n, w = 2) => String(n).padStart(w, '0');
     const y = dateObj.getFullYear();
     const m = pad(dateObj.getMonth() + 1);
@@ -71,17 +55,15 @@ function formatDateTimeSql(dateObj) {
     return `${y}-${m}-${d} ${hh}:${mi}:${ss}.${ms}`;
 }
 
-// Log helper simples
+/* ---------- Logging helpers ---------- */
 function logDebug(step, payload) {
-    //console.log(`[logs-repo] ${step}:`, payload);
+    // console.log(`[logs-repo] ${step}:`, payload);
 }
-
-// Loga a query + params normalizados
 function logQuery(step, sql, params) {
-    //console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
+    // console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
 }
 
-// Garante separador " - " para arma/desarma programado (complemento 0)
+/* ---------- Description normalizer ---------- */
 function normalizeArmDisarmDescricao(descricao, codigo, complemento) {
     if (!descricao) return descricao;
     const cod = String(codigo || '').trim();
@@ -94,61 +76,64 @@ function normalizeArmDisarmDescricao(descricao, codigo, complemento) {
     return descricao;
 }
 
+/* ==============================
+   LogsRepository class
+   ============================== */
 class LogsRepository {
     constructor(getPoolFn) {
         this.getPool = getPoolFn;
     }
 
+    /* ---------- Save incoming event ---------- */
     async saveIncomingEvent(event) {
         if (!event) return null;
         const pool = await this.getPool();
-        const codigo = normalizeText(event.codigoEvento || event.codigo || event.code);
-        const complementoRaw = normalizeText(event.complemento);
-        const complemento = normalizeComplemento(complementoRaw);
-        const particao = normalizeText(event.particao);
-        const local = normalizeText(event.local || event.isep || event.clientId);
-        const isep = normalizeText(event.isep || event.local || event.clientId);
-        const dataEventoDate = toDateGmt3(event.timestamp);
-        const dataEventoStr = formatDateTimeSql(dataEventoDate);
+
+        const codigo       = normalizeText(event.codigoEvento || event.codigo || event.code);
+        const complemento  = normalizeComplemento(event.complemento);
+        const particao     = normalizeText(event.particao);
+        const local        = normalizeText(event.local || event.isep || event.clientId);
+        const isep         = normalizeText(event.isep || event.local || event.clientId);
+        const dataEvento   = toDateGmt3(event.timestamp);
+        const dataEventoStr= formatDateTimeSql(dataEvento);
 
         let descricao = normalizeText(event.descricao);
         descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
 
-        const normalizedEvent = { 
-            ...event, 
+        const normalizedEvent = {
+            ...event,
             complemento,
             userName: event.userName || null,
             userId: event.userId || null,
             userMatricula: event.userMatricula || null
         };
-        const rawEvent = JSON.stringify(normalizedEvent || {});
+        const rawEvent = JSON.stringify(normalizedEvent);
 
-        // Dedup em memória
+        // Deduplication cache
         pruneDedupeCache();
         const dedupeKey = makeDedupeKey(codigo, isep, complemento, dataEventoStr);
         if (dedupeCache.has(dedupeKey)) {
-            logDebug('saveIncomingEvent - skip duplicate (memory)', { dedupeKey });
+            logDebug('saveIncomingEvent - duplicate (memory)', { dedupeKey });
             return null;
         }
         dedupeCache.set(dedupeKey, { ts: Date.now(), count: 1 });
 
-        // ✅ CORREÇÃO: Adiciona DataHora na query
         const sql = `
             INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, DataHora, RawEvent)
             OUTPUT INSERTED.Id
             VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), GETDATE(), @RawEvent);
         `;
-        
-        const params = { 
-            Codigo: codigo, 
-            CodigoEvento: codigo, 
-            Complemento: complemento, 
-            Particao: particao, 
-            Local: local, 
-            ISEP: isep, 
-            Descricao: descricao, 
-            DataEventoStr: dataEventoStr, 
-            RawEvent: rawEvent 
+
+        const params = {
+            Codigo: codigo,
+            CodigoEvento: codigo,
+            Complemento: complemento,
+            Particao: particao,
+            Local: local,
+            ISEP: isep,
+            Descricao: descricao,
+            DataEventoStr: dataEventoStr,
+            RawEvent: rawEvent
         };
         logQuery('event(incoming)', sql, params);
 
@@ -169,14 +154,14 @@ class LogsRepository {
         return eventId;
     }
 
+    /* ---------- Find existing event ID ---------- */
     async findEventId(event) {
         const pool = await this.getPool();
-        const codigo = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
+        const codigo      = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
         const complemento = normalizeComplemento(event?.complemento);
-        const particao = normalizeText(event?.particao);
-        const isep = normalizeText(event?.isep || event?.local || event?.clientId);
-        
-        // ✅ CORRIGIDO: Valida timestamp antes de usar
+        const particao    = normalizeText(event?.particao);
+        const isep        = normalizeText(event?.isep || event?.local || event?.clientId);
+
         const timestamp = event?.timestamp;
         const dataEventoStr = timestamp ? formatDateTimeSql(toDateGmt3(timestamp)) : null;
 
@@ -190,10 +175,6 @@ class LogsRepository {
               ${dataEventoStr ? 'AND ABS(DATEDIFF(SECOND, DataEvento, CONVERT(datetime2, @DataEventoStr, 120))) <= 60' : ''}
             ORDER BY DataHora DESC;
         `;
-        const params = { Codigo: codigo, ISEP: isep, Complemento: complemento, Particao: particao };
-        if (dataEventoStr) params.DataEventoStr = dataEventoStr;
-        
-        logQuery('findEventId', sql, params);
 
         const request = pool.request()
             .input('Codigo', mssql.NVarChar(50), codigo)
@@ -206,13 +187,13 @@ class LogsRepository {
         return result.recordset[0]?.Id || null;
     }
 
+    /* ---------- Save closure ---------- */
     async saveClosure(eventId, closure, isepFromEvent, codigoFromEvent, extra) {
         const pool = await this.getPool();
-        
-        // ✅ CORRIGIDO: Valida data do evento
-        const dataEventoDate = extra?.timestamp ? toDateGmt3(extra.timestamp) : new Date();
-        const dataEventoStr = formatDateTimeSql(dataEventoDate);
-        
+
+        const dataEvento   = extra?.timestamp ? toDateGmt3(extra.timestamp) : new Date();
+        const dataEventoStr= formatDateTimeSql(dataEvento);
+
         const payload = {
             EventId: eventId,
             ISEP: normalizeText(isepFromEvent),
@@ -254,44 +235,44 @@ class LogsRepository {
         return insertedId;
     }
 
+    /* ---------- Save event + closure in a transaction ---------- */
     async saveEventAndClosure(event, closure) {
         const pool = await this.getPool();
         const tx = new mssql.Transaction(pool);
         await tx.begin();
 
         try {
-            const codigo = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
-            const complementoRaw = normalizeText(event?.complemento);
-            const complemento = normalizeComplemento(complementoRaw);
-            const particao = normalizeText(event?.particao);
-            const local = normalizeText(event?.local);
-            const isep = normalizeText(event?.isep || event?.local || event?.clientId);
-            let descricao = normalizeText(event?.descricao);
+            const codigo       = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
+            const complemento  = normalizeComplemento(event?.complemento);
+            const particao     = normalizeText(event?.particao);
+            const local        = normalizeText(event?.local);
+            const isep         = normalizeText(event?.isep || event?.local || event?.clientId);
+            let descricao      = normalizeText(event?.descricao);
             descricao = normalizeArmDisarmDescricao(descricao, codigo, complemento);
-            
-            // ✅ CORRIGIDO: Valida timestamp
-            const dataEventoDate = toDateGmt3(event?.timestamp);
-            const dataEventoStr = formatDateTimeSql(dataEventoDate);
-            
-            // ✅ PRESERVA CAMPOS DE USUÁRIO NO RAW EVENT
-            const normalizedEvent = { 
-                ...event, 
+
+            const dataEvento   = toDateGmt3(event?.timestamp);
+            const dataEventoStr= formatDateTimeSql(dataEvento);
+
+            const normalizedEvent = {
+                ...event,
                 complemento,
                 userName: event.userName || null,
                 userId: event.userId || null,
                 userMatricula: event.userMatricula || null,
-                timestamp: dataEventoDate.getTime() // Garante timestamp válido
+                timestamp: dataEvento.getTime()
             };
-            const rawEvent = JSON.stringify(normalizedEvent || {});
-            
-            const type = normalizeText(closure?.type);
+            const rawEvent = JSON.stringify(normalizedEvent);
+
+            const type          = normalizeText(closure?.type);
             const procedureText = normalizeText(closure?.procedureText);
-            const userName = normalizeText(closure?.user?.displayName || closure?.user?.username);
+            const userName      = normalizeText(closure?.user?.displayName || closure?.user?.username);
 
             logDebug('saveEventAndClosure - normalized inputs', {
-                codigo, complemento, particao, local, isep, type, procedureText, userName, descricao, dataEventoStr
+                codigo, complemento, particao, local, isep,
+                type, procedureText, userName, descricao, dataEventoStr
             });
 
+            // Try to reuse an existing event
             let eventId = await this.findEventId({ ...event, complemento });
 
             if (!eventId) {
@@ -312,8 +293,8 @@ class LogsRepository {
                     RawEvent: rawEvent
                 });
 
-                const reqEvent = new mssql.Request(tx);
-                const evResult = await reqEvent
+                const evReq = new mssql.Request(tx);
+                const evResult = await evReq
                     .input('Codigo', mssql.NVarChar(50), codigo)
                     .input('CodigoEvento', mssql.NVarChar(50), codigo)
                     .input('Complemento', mssql.NVarChar(100), complemento)
@@ -328,7 +309,7 @@ class LogsRepository {
                 eventId = evResult.recordset[0].Id;
                 logDebug('saveEventAndClosure - event inserted', { eventId });
             } else {
-                logDebug('saveEventAndClosure - reused existing eventId', { eventId });
+                logDebug('saveEventAndClosure - reused eventId', { eventId });
             }
 
             const sqlClosure = `
@@ -336,7 +317,6 @@ class LogsRepository {
                 OUTPUT INSERTED.Id
                 VALUES (@EventId, @ISEP, @Codigo, @Complemento, @Particao, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @Tipo, @Procedimento, @ClosedBy, @ClosedByDisplay);
             `;
-
             logQuery('closure(tx)', sqlClosure, {
                 EventId: eventId,
                 ISEP: isep,
@@ -351,8 +331,8 @@ class LogsRepository {
                 ClosedByDisplay: closure?.user?.displayName
             });
 
-            const reqClosure = new mssql.Request(tx);
-            const clResult = await reqClosure
+            const clReq = new mssql.Request(tx);
+            const clResult = await clReq
                 .input('EventId', mssql.Int, eventId)
                 .input('ISEP', mssql.NVarChar(10), isep)
                 .input('Codigo', mssql.NVarChar(50), codigo)
@@ -369,11 +349,13 @@ class LogsRepository {
             const closureId = clResult.recordset[0].Id;
             logDebug('saveEventAndClosure - closure inserted', { closureId });
 
+            // Link closure to event
             await new mssql.Request(tx)
                 .input('EventId', mssql.Int, eventId)
                 .input('ClosureId', mssql.Int, closureId)
                 .query(`UPDATE LOGS.Events SET ClosureId = @ClosureId WHERE Id = @EventId;`);
 
+            // Additional safety update (in case of race conditions)
             await new mssql.Request(tx)
                 .input('ClosureId', mssql.Int, closureId)
                 .input('ISEP', mssql.NVarChar(10), isep)
@@ -396,7 +378,7 @@ class LogsRepository {
         }
     }
 
-    // NOVO: busca últimos eventos para hidratar o front após reload
+    /* ---------- Get recent events (for UI reload) ---------- */
     async getRecentEvents(limit = 300) {
         const pool = await this.getPool();
         const safeLimit = Math.max(1, Math.min(Number(limit) || 300, 1000));

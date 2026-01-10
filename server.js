@@ -8,9 +8,9 @@
 	const express = require('express');       // HTTP/API framework
 	const mssql = require('mssql');            // SQL Server driver
 	const dbConfig = require('./db-config');   // Main DB config
-	const logsDbConfig = require('./logs-db-config'); // Logs DB config
+	const logsDbConfig = require('./logsDbConfig'); // Logs DB config
 	const { spawn } = require('child_process'); // PowerShell for AD auth
-	const { LogsRepository } = require('./logs-repository'); // Logs repository
+	const { LogsRepository } = require('./logsRepository'); // Logs repository
 	const ViawebCommands = require('./viaweb-commands');     // Viaweb protocol helpers
 
 // ==============================
@@ -1754,8 +1754,8 @@
 
 		Módulos locais:
 		- ./db-config: Config banco ASM
-		- ./logs-db-config: Config banco Logs
-		- ./logs-repository: CRUD de eventos/encerramentos
+		- ./logsDbConfig: Config banco Logs
+		- ./logsRepository: CRUD de eventos/encerramentos
 		- ./logger: Winston logger (opcional)
 		- ./metrics: Coletor de métricas (opcional)
 		- ./viaweb-commands: Comandos protocolo Viaweb
