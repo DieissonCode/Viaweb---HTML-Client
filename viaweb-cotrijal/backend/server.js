@@ -13,6 +13,24 @@
 	const { LogsRepository } = require('./logs-repository'); // Logs repository
 	const ViawebCommands = require('./viaweb-commands');     // Viaweb protocol helpers
 
+	const fs = require('fs');
+	const configPath = path.join(__dirname, '..', 'config.js');
+	const configContent = fs.readFileSync(configPath, 'utf8');
+
+	// Extract eventosDB from config.js (inside window.ViawebConfig)
+	const eventosDBMatch = configContent.match(/eventosDB\s*:\s*({[\s\S]*?})\s*}/);
+	if (!eventosDBMatch) {
+		throw new Error('❌ Não foi possível extrair eventosDB do config.js');
+	}
+
+	// Evaluate the JavaScript object
+	const eventosDB = eval(`(${eventosDBMatch[1]})`);
+	logger.info(`✅ ${Object.keys(eventosDB).length} códigos de eventos carregados do config.js`);
+
+	// Also import armDisarmCodes
+	const armDisarmCodesMatch = configContent.match(/armDisarmCodes\s*:\s*(|$[\s\S]*?$|)/);
+	const armDisarmCodes = armDisarmCodesMatch ? eval(armDisarmCodesMatch[1]) : [];
+
 // ==============================
 // Event locking & deduplication
 
