@@ -71,7 +71,7 @@
                          │
          ┌───────────────▼───────────────┐
          │     Viaweb Receiver           │
-         │      (10.0.20.43)             │
+         │      (VIAWEB_RECEIVER_ADDRESS)             │
          └───────────────┬───────────────┘
                          │
          ┌───────────────▼───────────────┐
@@ -147,7 +147,7 @@ Frontend (exibe) → Envia ACK
 
 - Node.js v14 ou superior
 - SQL Server 2016 ou superior
-- Acesso à rede do Viaweb Receiver (10.0.20.43:2700)
+- Acesso à rede do Viaweb Receiver (VIAWEB_RECEIVER_ADDRESS:2700)
 - Portas 8090, 3000, 8000 disponíveis
 
 ### Passos
@@ -180,7 +180,7 @@ Após iniciar, você deve ver:
 ✅ API REST iniciada na porta 3000
 ✅ Servidor HTTP iniciado na porta 8000
 ✅ Conectado ao SQL Server
-✅ Cliente TCP conectado ao Viaweb Receiver (10.0.20.43:2700)
+✅ Cliente TCP conectado ao Viaweb Receiver (VIAWEB_RECEIVER_ADDRESS:2700)
 ✅ IDENT enviado com sucesso
 ✅ Sistema pronto para receber comandos
 ```
@@ -201,7 +201,7 @@ DB_ENCRYPT=true
 DB_TRUST_CERT=true
 
 # Viaweb Receiver
-VIAWEB_HOST=10.0.20.43
+VIAWEB_HOST=VIAWEB_RECEIVER_ADDRESS
 VIAWEB_PORT=2700
 
 # Criptografia
@@ -496,8 +496,8 @@ function descriptografar(criptografado) {
 **Solução:**
 ```bash
 # Testar conectividade
-ping 10.0.20.43
-telnet 10.0.20.43 2700
+ping VIAWEB_RECEIVER_ADDRESS
+telnet VIAWEB_RECEIVER_ADDRESS 2700
 
 # Verificar configuração
 cat .env
@@ -586,7 +586,6 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 - **Email:** dsantos.dev@gmail.com
 - **Issues:** [GitHub Issues](https://github.com/seu-usuario/viaweb-cotrijal/issues)
-- **Documentação:** [Wiki](https://github.com/seu-usuario/viaweb-cotrijal/wiki)
 
 ---
 
