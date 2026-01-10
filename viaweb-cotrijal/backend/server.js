@@ -666,7 +666,9 @@
 
 	// ==============================
 	// Static file hosting (frontend assets)
-		app.use(express.static(__dirname));
+		const path = require('path');
+		app.use(express.static(path.join(__dirname, '..')));
+
 
 	// ==============================
 	// Periodic cleanup of expired event locks
@@ -827,13 +829,13 @@
 
 				// Known activation types
 				const tipos = {
-					0: '[Scheduled Time]',
-					1: '[Monitoring]',
-					2: '[Facilitator]',
-					3: '[One-Time Password]',
-					4: '[One-Time Password]',
-					5: '[One-Time Password]',
-					6: '[IT - Maintenance]'
+					0: '[Horário Programado]',
+					1: '[Monitoramento]',
+					2: '[Facilitador]',
+					3: '[Senha Única]',
+					4: '[Senha Única]',
+					5: '[Senha Única]',
+					6: '[TI - Manutenção]'
 				};
 
 				// ==============================
@@ -849,8 +851,8 @@
 
 					// Define prefix based on event type
 					const baseDesc = cod.startsWith('3')
-						? 'Armed - '
-						: 'Disarmed - ';
+						? 'Armado - '
+						: 'Desarmado - ';
 
 					// Known type (fixed mapping)
 					if (tipos[zonaUsuario]) {
@@ -992,13 +994,13 @@
 
 				// Known activation types
 				const tipos = {
-					0: '[Scheduled Time]',
-					1: '[Monitoring]',
-					2: '[Facilitator]',
-					3: '[One-Time Password]',
-					4: '[One-Time Password]',
-					5: '[One-Time Password]',
-					6: '[IT - Maintenance]'
+					0: '[Horário Programado]',
+					1: '[Monitoramento]',
+					2: '[Facilitador]',
+					3: '[Senha Única]',
+					4: '[Senha Única]',
+					5: '[Senha Única]',
+					6: '[TI - Manutenção]'
 				};
 
 				// ==============================
@@ -1014,8 +1016,8 @@
 
 					// Define prefix based on event type
 					const baseDesc = cod.startsWith('3')
-						? 'Armed - '
-						: 'Disarmed - ';
+						? 'Armado - '
+						: 'Desarmado - ';
 
 					// Known type (fixed mapping)
 					if (tipos[zonaUsuario]) {
