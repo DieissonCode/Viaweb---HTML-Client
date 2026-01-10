@@ -1,586 +1,598 @@
-﻿# 📚 Documentação do Projeto Viaweb - HTML Client
+# VIAWEB COTRIJAL
 
-## 🗂️ Estrutura de Arquivos
+> Plataforma de monitoramento e controle de equipamentos de segurança conectados à rede Viaweb
 
-### Backend (Node.js)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen)](https://nodejs.org)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![SQL Server](https://img.shields.io/badge/SQL%20Server-%3E%3D2016-red)](https://www.microsoft.com/sql-server)
 
-#### `bridge.js`
-**Função:** Servidor principal que atua como ponte entre navegador e servidor TCP Viaweb.
+---
 
-**Responsabilidades:**
-- WebSocket Server (porta 8080) - Comunicação com navegador
-- API REST (porta 3000) - Fornece lista de unidades do banco
-- Servidor HTTP (porta 8000) - Serve arquivos estáticos
-- Cliente TCP - Conecta ao servidor Viaweb (10.0.20.43:2700)
-- Criptografia AES-256-CBC para comunicação TCP
-- Gerenciamento de banco de dados MSSQL
+## 📋 Índice
 
-**Principais Funções:**
-- `encrypt(plainText, keyBuffer, ivBuffer)` - Criptografa dados para enviar ao TCP
-- `decrypt(encryptedBuffer, keyBuffer, ivBuffer)` - Descriptografa dados recebidos do TCP
-- `hexToBuffer(hexString)` - Converte string hex para Buffer
-- `connectDatabase()` - Conecta ao banco SQL Server
-- `startApiServer()` - Inicia API REST na porta 3000
-- `startHttpServerAndOpenBrowser()` - Inicia servidor HTTP e abre navegador
+- [Visão Geral](#-visão-geral)
+- [Arquitetura](#-arquitetura)
+- [Funcionalidades](#-funcionalidades)
+- [Instalação](#-instalação)
+- [Configuração](#-configuração)
+- [Operações Suportadas](#-operações-suportadas)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
+- [Criptografia](#-criptografia)
+- [Troubleshooting](#-troubleshooting)
+- [Contribuindo](#-contribuindo)
+- [Licença](#-licença)
 
-**Fluxo de Dados:**
+---
+
+## 🎯 Visão Geral
+
+**Viaweb Cotrijal** é uma plataforma web que atua como intermediário entre interfaces de usuário (navegadores) e o sistema Viaweb Receiver, permitindo monitoramento e controle em tempo real de equipamentos de segurança (alarmes, sensores, partições).
+
+### O que faz?
+
+- ✅ Armamento/desarmamento de partições
+- ✅ Leitura de status de zonas e partições
+- ✅ Recepção e processamento de eventos em tempo real
+- ✅ Criptografia AES-256-CBC em todas comunicações TCP
+- ✅ Persistência de eventos em banco de dados
+- ✅ API REST para integração externa
+- ✅ WebSocket para comunicação bidirecional
+
+---
+
+## 🏗️ Arquitetura
+
 ```
-Navegador (WS) ↔ bridge.js (criptografa/descriptografa) ↔ Servidor TCP Viaweb
-                      ↓
-                 SQL Server (busca unidades)
+┌─────────────────────────────────────────────────────────────────┐
+│                      NAVEGADOR WEB                              │
+│                   (Frontend HTML5 + JS)                         │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+         ┌───────────────┴───────────────┐
+         │                               │
+┌────────▼────────┐            ┌────────▼──────────┐
+│   WebSocket     │            │    REST API       │
+│  (porta 8090)   │            │  (porta 3000)     │
+└────────┬────────┘            └────────┬──────────┘
+         │                               │
+         └───────────────┬───────────────┘
+                         │
+         ┌───────────────▼───────────────┐
+         │       SERVER.JS (Node.js)     │
+         │  - Gerenciador de conexões    │
+         │  - Criptografia AES-256-CBC   │
+         │  - Roteador de comandos       │
+         │  - Persistência em banco      │
+         └───────────────┬───────────────┘
+                         │
+         ┌───────────────▼───────────────┐
+         │      Cliente TCP (2700)       │
+         └───────────────┬───────────────┘
+                         │
+         ┌───────────────▼───────────────┐
+         │     Viaweb Receiver           │
+         │   (VIAWEB_RECEIVER_ADDRESS)   │
+         └───────────────┬───────────────┘
+                         │
+         ┌───────────────▼───────────────┐
+         │     Equipamentos (Alarmes)    │
+         └───────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    SQL Server (Banco)                           │
+│              - Logs de eventos                                  │
+│              - Configurações                                    │
+│              - Histórico de operações                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Fluxo de Dados
+
+#### 1. Inicialização
+```
+node server.js → Carrega configs → Conecta SQL Server → 
+Inicia WebSocket (8090) → Inicia API REST (3000) → 
+Inicia HTTP (8000) → Conecta Viaweb Receiver (TCP 2700) → 
+Envia IDENT → Sistema pronto
+```
+
+#### 2. Envio de Comando
+```
+Frontend (WebSocket) → server.js (valida) → 
+Criptografa AES-256-CBC → Viaweb Receiver → 
+Equipamento (executa) → Resposta criptografada → 
+server.js (descriptografa) → Salva em DB → 
+Frontend (atualiza UI)
+```
+
+#### 3. Recepção de Evento
+```
+Equipamento (gera evento) → Viaweb Receiver → 
+server.js (descriptografa) → Valida → 
+SQL Server (persiste) → WebSocket (broadcast) → 
+Frontend (exibe) → Envia ACK
 ```
 
 ---
 
-#### `db-config.js`
-**Função:** Configuração de conexão com banco de dados SQL Server.
+## ⚡ Funcionalidades
 
-**Configurações:**
-- `user` - Usuário do banco (ahk)
-- `password` - Senha do banco (123456)
-- `server` - Endereço do servidor SQL (srvvdm-bd\viaweb)
-- `database` - Nome do banco (Programação)
-- `port` - Porta SQL Server (12346)
-- `options` - Configurações de segurança e criptografia
+### Gerenciamento de Partições
+- Armar/desarmar partições individualmente ou em grupo
+- Consultar status de armamento em tempo real
+- Inibir zonas específicas durante armamento
+
+### Monitoramento de Zonas
+- Status em tempo real de todas as zonas
+- Detecção de violação, falhas e restauração
+- Tipos de zona (PIR, Porta, Vidro, etc.)
+
+### Eventos em Tempo Real
+- Recepção instantânea via WebSocket
+- Persistência automática em banco de dados
+- Códigos ContactID (ISO 8601)
+- Notificações configuráveis
+
+### Segurança
+- Criptografia AES-256-CBC obrigatória
+- IV dinâmico por mensagem
+- Autenticação de comandos
+- Logs detalhados de operações
 
 ---
 
-#### `test-db.js`
-**Função:** Script de teste para validar conexão com banco de dados.
+## 📦 Instalação
 
-**Funcionalidades:**
-- Testa conexão com SQL Server
-- Lista todas as unidades da tabela INSTALACAO
-- Mostra erros detalhados com dicas de solução
-- Útil para diagnóstico de problemas de conexão
+### Pré-requisitos
 
-**Como usar:**
+- Node.js v14 ou superior
+- SQL Server 2016 ou superior
+- Acesso à rede do Viaweb Receiver (VIAWEB_RECEIVER_ADDRESS:2700)
+- Portas 8090, 3000, 8000 disponíveis
+
+### Passos
+
 ```bash
+# 1. Clone o repositório
+git clone https://github.com/seu-usuario/viaweb-cotrijal.git
+cd viaweb-cotrijal
+
+# 2. Instale as dependências
+npm install
+
+# 3. Configure as variáveis de ambiente
+cp .env.example .env
+nano .env  # Edite com suas credenciais
+
+# 4. Teste a conexão com o banco
 node test-db.js
+
+# 5. Inicie o servidor
+node server.js
+```
+
+### Verificação
+
+Após iniciar, você deve ver:
+
+```
+✅ Servidor WebSocket iniciado na porta 8090
+✅ API REST iniciada na porta 3000
+✅ Servidor HTTP iniciado na porta 8000
+✅ Conectado ao SQL Server
+✅ Cliente TCP conectado ao Viaweb Receiver (VIAWEB_RECEIVER_ADDRESS:2700)
+✅ IDENT enviado com sucesso
+✅ Sistema pronto para receber comandos
 ```
 
 ---
 
-### Frontend (Navegador)
+## ⚙️ Configuração
 
-#### `index.html`
-**Função:** Interface principal do sistema de monitoramento.
+### Arquivo `.env`
 
-**Seções:**
-1. **Header** - Status de conexão (conectado/desconectado)
-2. **Controle de Centrais** - Seção recolhível com:
-   - Seleção de unidade (dropdown com busca)
-   - Botões Armar/Desarmar
-   - Lista de partições (checkboxes)
-   - Lista de zonas (checkboxes em colunas)
-3. **Eventos** - Seção com:
-   - Filtro de texto
-   - Abas (Todos, Disparos, Pendentes, Sistema, Usuários, Histórico)
-   - Tabela de eventos com cores por tipo
+```env
+# SQL Server
+DB_SERVER=localhost
+DB_DATABASE=viaweb_cotrijal
+DB_USER=sa
+DB_PASSWORD=sua_senha_aqui
+DB_ENCRYPT=true
+DB_TRUST_CERT=true
 
-**Elementos principais:**
-- `#status` - Indicador visual de conexão
-- `#unit-select` - Dropdown de unidades
-- `#unit-search` - Campo de busca de unidades
-- `#partitions-list` - Container de partições
-- `#zones-list` - Container de zonas
-- `#events-table` - Tabela de eventos
-- `#closeEventModal` - Modal para encerrar eventos
+# Viaweb Receiver
+VIAWEB_HOST=VIAWEB_RECEIVER_ADDRESS
+VIAWEB_PORT=2700
 
----
+# Criptografia
+CRYPTO_KEY=32_caracteres_chave_aes_256_aqui
+CRYPTO_IV=16_caracteres_iv_aqui
 
-#### `main.js`
-**Função:** Lógica principal do frontend - gerencia conexões, comandos e eventos.
+# Servidor
+WS_PORT=8090
+REST_PORT=3000
+HTTP_PORT=8000
 
-**Variáveis Globais:**
-- `units` - Array com todas as unidades carregadas
-- `allEvents` - Array com até 300 eventos recentes
-- `activeAlarms` - Map de alarmes ativos (código 1130)
-- `activePendentes` - Map de eventos pendentes (falhas não resolvidas)
-- `ws` - Conexão WebSocket
-- `cryptoInstance` - Instância da classe de criptografia
-- `pendingCommands` - Map de comandos aguardando resposta
-- `currentClientId` - ID da unidade atualmente selecionada
+# Logging
+LOG_LEVEL=info
+LOG_FILE=logs/server.log
+```
 
-**Principais Funções:**
+### Arquivo `db-config.js`
 
-**Inicialização:**
-- `(async () => {...})()` - IIFE que carrega unidades ao iniciar
-- `populateUnitSelect()` - Popula dropdown com unidades
-- `initCrypto()` - Inicializa criptografia AES
-- `connectWebSocket()` - Conecta ao WebSocket do bridge
-
-**Visualização:**
-- `updatePartitions(data)` - Atualiza lista de partições na UI
-- `updateZones(data)` - Atualiza lista de zonas em colunas
-- `updateEventList()` - Atualiza tabela de eventos conforme aba ativa
-- `updateCounts()` - Atualiza contadores de alarmes e pendentes
-- `getPartitionName(pos, clientId)` - Retorna nome da partição baseado no último dígito do ID
-
-**Processamento de Eventos:**
-- `processEvent(data)` - Processa evento recebido do servidor
-  - Adiciona ao array `allEvents`
-  - Detecta alarmes (1130) e adiciona a `activeAlarms`
-  - Detecta falhas e restauros, gerencia `activePendentes`
-  - Chama `updateEventList()` e `updateCounts()`
-
-**Comunicação:**
-- `sendEncrypted(data)` - Criptografa e envia comando via WebSocket
-- `fetchPartitionsAndZones(idISEP)` - Busca partições e zonas de uma central
-- `armarParticoes(idISEP, particoes, zonas)` - Envia comando de armação
-- `desarmarParticoes(idISEP, particoes)` - Envia comando de desarmação
-
-**Auxiliares:**
-- `getSelectedPartitions()` - Retorna IDs das partições marcadas
-- `getSelectedZones()` - Retorna IDs das zonas marcadas
-- `openCloseModal(group, type)` - Abre modal para encerrar evento
-
-**Event Listeners:**
-- `unitSelect.change` - Quando seleciona unidade, carrega dados
-- `armButton.click` - Arma partições selecionadas
-- `disarmButton.click` - Desarma partições selecionadas
-- `autoUpdateCheckbox.change` - Ativa/desativa atualização automática (30s)
-- `.tab-btn.click` - Troca aba de eventos
-- `eventsFilter.input` - Filtra eventos em tempo real
-
----
-
-#### `crypto.js`
-**Função:** Implementação de criptografia AES-256-CBC para o navegador.
-
-**Classe: `ViawebCrypto`**
-
-**Constructor:**
 ```javascript
-constructor(hexKey, hexIV)
-```
-- Recebe chave e IV em hexadecimal
-- Converte para Uint8Array
-- Mantém IVs separados para envio (ivSend) e recepção (ivRecv)
-
-**Métodos:**
-
-**`async encrypt(plainText)`**
-- Criptografa texto usando AES-256-CBC
-- Adiciona padding PKCS7 (múltiplo de 16 bytes)
-- Atualiza `ivSend` com últimos 16 bytes do criptografado
-- Retorna Uint8Array criptografado
-
-**`async decrypt(encryptedBuffer)`**
-- Descriptografa dados usando AES-256-CBC
-- Remove padding PKCS7
-- Atualiza `ivRecv` com últimos 16 bytes do buffer
-- Remove caracteres nulos do final
-- Retorna string descriptografada
-
-**`hexToBytes(hexStr)`**
-- Converte string hexadecimal para Uint8Array
-- Remove espaços automaticamente
-
-**Características:**
-- Usa Web Crypto API (window.crypto.subtle)
-- CBC mode com IVs dinâmicos (Cipher Block Chaining)
-- Compatível com a criptografia do servidor Viaweb
-
----
-
-#### `config.js`
-**Função:** Configurações globais e dicionários de eventos.
-
-**Exports:**
-
-**`CHAVE`** - Chave AES-256 em hexadecimal (32 bytes)
-
-**`IV`** - Vetor de inicialização em hexadecimal (16 bytes)
-
-**`partitionNames`** - Objeto mapeando último dígito do ID para nome:
-```javascript
-{
-  1: "Balança",
-  2: "Administrativo",
-  3: "Defensivos",
-  // ...
-}
-```
-
-**`armDisarmCodes`** - Array de códigos de armação/desarmação:
-- `"1401"` - Desativado Por Senha
-- `"1402"` - Partição Desativada por Senha
-- `"3401"` - Ativado Por Senha
-- `"3402"` - Partição Ativada por Senha
-- `"3403"` - Auto Ativação
-- `"3456"` - Ativado Forçado
-
-**`falhaCodes`** - Array de códigos de falha (começam com "1"):
-- `"1142"` - Curto circuito no sensor
-- `"1143"` - Falha de Módulo Expansor
-- `"1144"` - Violação de Tamper
-- `"1300"` - Falha de Fonte Auxiliar
-- `"1301"` - Falha de Energia Elétrica
-- `"1302"` - Falha de Bateria
-- etc.
-
-**`sistemaCodes`** - Array com códigos de falha + restauro (começam com "3"):
-- Inclui todos os `falhaCodes`
-- Mais códigos de restauro correspondentes (ex: "3142", "3143")
-
-**`eventosDB`** - Objeto com descrições de todos os eventos:
-```javascript
-{
-  "1130": "Disparo de alarme no sensor",
-  "3130": "Restauro de sensor",
-  "1144": "Violação de Tamper",
-  // ... 50+ eventos
-}
-```
-
----
-
-#### `units-db.js`
-**Função:** Gerencia busca e cache de unidades da API.
-
-**Variáveis Privadas:**
-- `cachedUnits` - Cache das unidades
-- `cacheTimestamp` - Timestamp do último carregamento
-- `CACHE_DURATION` - 5 minutos (300000ms)
-- `API_URL` - http://localhost:3000/api/units
-
-**Funções Exportadas:**
-
-**`async getUnits(forceRefresh = false)`**
-- Busca unidades da API REST
-- Usa cache se válido (menos de 5 min)
-- Em caso de erro, retorna cache antigo ou fallback
-- Mapeia dados para formato padronizado:
-  ```javascript
-  {
-    value: "0572",
-    local: "AGS [ ADM ]",
-    label: "AGS [ ADM ]",
-    sigla: "AGS"
+module.exports = {
+  server: process.env.DB_SERVER,
+  database: process.env.DB_DATABASE,
+  authentication: {
+    type: 'default',
+    options: {
+      userName: process.env.DB_USER,
+      password: process.env.DB_PASSWORD
+    }
+  },
+  options: {
+    encrypt: process.env.DB_ENCRYPT === 'true',
+    trustServerCertificate: process.env.DB_TRUST_CERT === 'true',
+    connectionTimeout: 30000,
+    requestTimeout: 30000
   }
-  ```
-
-**`refreshUnits()`**
-- Força atualização ignorando cache
-- Útil para recarregar após mudanças no banco
-
-**`clearCache()`**
-- Limpa cache de unidades
-- Próxima chamada busca do servidor
-
-**`getFallbackUnits()` (privada)**
-- Retorna 8 unidades de exemplo
-- Usado quando API não está disponível
-- Garante que sistema funcione mesmo sem banco
-
----
-
-#### `viaweb-commands.js`
-**Função:** Biblioteca de comandos do protocolo Viaweb - construtores de JSON.
-
-**Funções de Comando:**
-
-**`getPartitionsCommand(idISEP, commandId)`**
-- Cria comando para buscar partições
-- Retorna: `{oper: [{id, acao: "executar", idISEP, comando: [{cmd: "particoes"}]}]}`
-
-**`getZonesCommand(idISEP, commandId)`**
-- Cria comando para buscar zonas
-- Retorna estrutura similar com `cmd: "zonas"`
-
-**`armPartitionsCommand(idISEP, particoes, zonas, password, commandId)`**
-- Cria comando de armação
-- `particoes` - Array de números das partições
-- `zonas` - Array de zonas a inibir (opcional)
-- `password` - Senha (padrão: 8790)
-
-**`disarmPartitionsCommand(idISEP, particoes, password, commandId)`**
-- Cria comando de desarmação
-- Similar ao armPartitionsCommand mas sem inibição de zonas
-
-**`createIdentCommand(nome, serializado, retransmite, limite)`**
-- Cria comando IDENT para identificação inicial
-- Gera número aleatório para campo `a`
-- Usado ao conectar pela primeira vez
-
-**`getStatusCommand(idISEP, commandId)`**
-- Busca status geral da central
-- `cmd: "status"`
-
-**`createAckCommand(eventId)`**
-- Cria ACK (confirmação) de evento recebido
-- Formato: `{resp: [{id: eventId}]}`
-
-**`getInitialDataCommands(idISEP)`**
-- Cria ambos os comandos (partições + zonas) de uma vez
-- Retorna objeto com IDs e comandos separados
-
-**Funções de Validação:**
-
-**`isValidISEP(idISEP)`**
-- Valida formato do ID ISEP
-- Deve ser string de 4 caracteres hexadecimais
-- Exemplo: "0572", "1A3F", "ABCD"
-
-**`formatISEP(idISEP)`**
-- ⚠️ REMOVIDA A CONVERSÃO DECIMAL→HEX
-- Apenas garante 4 dígitos com zeros à esquerda
-- Converte para maiúsculas
-- Exemplo: "572" → "0572", "abc" → "0ABC"
-
----
-
-#### `styles.css`
-**Função:** Estilização completa da interface com tema dark mode.
-
-**Variáveis CSS (`:root`):**
-```css
---primary: #2563eb;        /* Azul primário */
---success: #10b981;        /* Verde sucesso */
---danger: #ef4444;         /* Vermelho perigo */
---warning: #f59e0b;        /* Laranja aviso */
---bg-dark: #0f172a;        /* Fundo escuro */
---bg-card: #1e293b;        /* Fundo de cards */
---text-primary: #f1f5f9;   /* Texto principal */
+};
 ```
 
-**Principais Classes:**
-
-**Status:**
-- `.connected` - Verde, pulsando
-- `.disconnected` - Vermelho, pulsando
-- `@keyframes pulse` - Animação de pulsação
-
-**Partições e Zonas:**
-- `.partition-item`, `.zone-item` - Containers com checkbox
-- `.armado` / `.desarmado` - Status de partições
-- `.ok`, `.aberto`, `.disparada`, `.inibida`, `.tamper` - Status de zonas
-- `.mono-number` - Números com fonte monoespaçada
-
-**Eventos:**
-- `.event-row` - Linha de evento com hover
-- `.alarm` - Vermelho (código 1130)
-- `.restauro` - Verde (códigos 3xxx)
-- `.falha` - Laranja (falhas de sistema)
-- `.armedisarm` - Azul (armação/desarmação)
-- `.teste` - Ciano (códigos 16xx)
-
-**Layout:**
-- `.container` - Grid 1fr 2fr (partições | zonas)
-- `#zones-columns` - Grid auto-fit para zonas em colunas
-- `.modal` - Overlay com blur para modais
-
-**Responsividade:**
-- `@media (max-width: 1200px)` - Container vira coluna única
-- `@media (max-width: 768px)` - Mobile: zonas em coluna única
-
 ---
 
-### Arquivos de Teste e Documentação
+## 🔌 Operações Suportadas
 
-#### `test-api.html`
-**Função:** Interface visual para testar API REST.
+### 1. Identificação (IDENT)
 
-**Funcionalidades:**
-- Botão "Testar Conexão" - Verifica se API está acessível
-- Botão "Buscar Unidades" - Lista todas as unidades do banco
-- Mostra headers HTTP da resposta
-- Exibe JSON completo em formato expandível
-- Diagnóstico de erros com dicas de solução
-- Teste automático ao carregar página
+**Descrição:** Identifica o cliente perante o Viaweb Receiver (automático na inicialização)
 
-**Útil para:**
-- Verificar se bridge.js está rodando
-- Confirmar conexão com banco de dados
-- Ver estrutura exata dos dados retornados
-
----
-
-#### `package.json`
-**Função:** Manifesto do projeto Node.js.
-
-**Dependências:**
-- `ws@^8.18.3` - WebSocket para comunicação navegador
-- `mssql@^12.2.0` - Driver SQL Server para Node.js
-
-**Scripts:**
 ```json
 {
-  "test": "echo \"Error: no test specified\" && exit 1"
+  "oper": [{
+    "id": "ident-1",
+    "acao": "ident",
+    "nome": "Viaweb Client HTML",
+    "retransmite": 0,
+    "limite": 20000,
+    "serializado": 1,
+    "limiteTestes": -1,
+    "versaoProto": 1
+  }]
+}
+```
+
+### 2. Consultar Status de Partições
+
+```json
+{
+  "oper": [{
+    "id": "cmd-part-001",
+    "acao": "executar",
+    "idISEP": "0572",
+    "timeout": 120,
+    "comando": [{
+      "cmd": "particoes"
+    }]
+  }]
+}
+```
+
+**Resposta:**
+```json
+{
+  "resp": [{
+    "id": "cmd-part-001",
+    "resposta": [
+      { "cmd": "particoes", "pos": 1, "armado": 1 },
+      { "cmd": "particoes", "pos": 2, "armado": 0 }
+    ]
+  }]
+}
+```
+
+### 3. Armar Partições
+
+```json
+{
+  "oper": [{
+    "id": "cmd-armar-001",
+    "acao": "executar",
+    "idISEP": "0572",
+    "timeout": 120,
+    "comando": [{
+      "cmd": "armar",
+      "password": "8790",
+      "particoes": [1, 2],
+      "inibir": [5, 8]
+    }]
+  }]
+}
+```
+
+### 4. Desarmar Partições
+
+```json
+{
+  "oper": [{
+    "id": "cmd-desarm-001",
+    "acao": "executar",
+    "idISEP": "0572",
+    "timeout": 120,
+    "comando": [{
+      "cmd": "desarmar",
+      "password": "8790",
+      "particoes": [1, 2]
+    }]
+  }]
+}
+```
+
+### 5. Consultar Zonas
+
+```json
+{
+  "oper": [{
+    "id": "cmd-zonas-001",
+    "acao": "executar",
+    "idISEP": "0572",
+    "timeout": 120,
+    "comando": [{
+      "cmd": "zonas"
+    }]
+  }]
+}
+```
+
+**Resposta:**
+```json
+{
+  "resp": [{
+    "id": "cmd-zonas-001",
+    "resposta": [
+      { "cmd": "zonas", "zona": 1, "status": "ok", "tipo": "PIR" },
+      { "cmd": "zonas", "zona": 2, "status": "violada", "tipo": "Porta" }
+    ]
+  }]
+}
+```
+
+### 6. Recepção de Eventos
+
+**Formato de evento recebido:**
+```json
+{
+  "oper": [{
+    "id": "15-evt",
+    "acao": "evento",
+    "codigoEvento": "1130",
+    "particao": 1,
+    "zonaUsuario": 5,
+    "isep": "0572",
+    "dia": 10,
+    "mes": 1,
+    "hora": 14,
+    "minuto": 30,
+    "eventoInterno": 1
+  }],
+  "eventosPendentes": 3
+}
+```
+
+**Confirmação obrigatória (ACK):**
+```json
+{
+  "resp": [{ "id": "15-evt" }]
+}
+```
+
+### Códigos de Evento ContactID
+
+| Código | Descrição |
+|--------|-----------|
+| 1130   | Zona violada |
+| 1400   | Zona restaurada |
+| 1200   | Partição armada |
+| 1300   | Partição desarmada |
+| 1500   | Bateria baixa |
+| 1600   | Falha de comunicação |
+
+---
+
+## 📁 Estrutura do Projeto
+
+```
+viaweb-cotrijal/
+├── server.js              # Servidor principal
+├── db-config.js           # Configuração SQL Server
+├── test-db.js             # Teste de conexão
+├── package.json           # Dependências Node.js
+├── .env                   # Variáveis de ambiente (não commitar!)
+├── .env.example           # Exemplo de variáveis
+├── public/                # Arquivos estáticos (frontend)
+│   ├── index.html
+│   ├── css/
+│   │   └── style.css
+│   ├── js/
+│   │   ├── app.js
+│   │   └── websocket-client.js
+│   └── assets/
+│       ├── icons/
+│       └── logos/
+├── logs/                  # Arquivos de log (gerados)
+│   ├── server.log
+│   └── errors.log
+└── docs/                  # Documentação
+    ├── README.md
+    ├── API.md
+    └── PROTOCOLO_VIAWEB.md
+```
+
+---
+
+## 🔐 Criptografia
+
+Todas as mensagens TCP entre `server.js` e `Viaweb Receiver` são criptografadas com **AES-256-CBC**.
+
+### IV Dinâmico
+
+O Initialization Vector (IV) é atualizado a cada mensagem:
+
+#### Envio
+```
+1. Inicializa ivSend com IV fixo (16 bytes)
+2. Criptografa mensagem com ivSend
+3. Atualiza ivSend = últimos 16 bytes do criptografado
+4. Envia via TCP
+```
+
+#### Recepção
+```
+1. Inicializa ivRecv com IV fixo (16 bytes)
+2. Recebe mensagem criptografada
+3. Descriptografa com ivRecv
+4. Atualiza ivRecv = últimos 16 bytes recebidos
+```
+
+### Implementação
+
+```javascript
+const crypto = require('crypto');
+
+const CHAVE = Buffer.from('32_caracteres_chave_aes_256_aqui', 'utf8');
+const IV_INICIAL = Buffer.from('16_caracteres_iv_', 'utf8');
+
+let ivSend = Buffer.from(IV_INICIAL);
+let ivRecv = Buffer.from(IV_INICIAL);
+
+function criptografar(mensagem) {
+    const cipher = crypto.createCipheriv('aes-256-cbc', CHAVE, ivSend);
+    let criptografado = cipher.update(mensagem, 'utf8', 'hex');
+    criptografado += cipher.final('hex');
+    
+    ivSend = Buffer.from(criptografado.slice(-32), 'hex');
+    return criptografado;
+}
+
+function descriptografar(criptografado) {
+    const decipher = crypto.createDecipheriv('aes-256-cbc', CHAVE, ivRecv);
+    let descriptografado = decipher.update(criptografado, 'hex', 'utf8');
+    descriptografado += decipher.final('utf8');
+    
+    ivRecv = Buffer.from(criptografado.slice(-32), 'hex');
+    return descriptografado;
 }
 ```
 
 ---
 
-## 🔄 Fluxo de Dados Completo
+## 🔧 Troubleshooting
 
-### 1. Inicialização
-```
-1. Usuário executa: node bridge.js
-2. Bridge inicia:
-   - WebSocket Server (8080)
-   - API REST (3000)
-   - HTTP Server (8000)
-   - Conecta ao SQL Server
-   - Conecta ao TCP Viaweb (10.0.20.43:2700)
-   - Envia IDENT
-3. Navegador abre automaticamente
-4. Frontend conecta WebSocket
-5. Frontend busca unidades da API
-6. Popula dropdown
+### Conexão recusada ao Viaweb Receiver
+
+**Causa:** IP/porta incorretos ou firewall bloqueando
+
+**Solução:**
+```bash
+# Testar conectividade
+ping VIAWEB_RECEIVER_ADDRESS
+telnet VIAWEB_RECEIVER_ADDRESS 2700
+
+# Verificar configuração
+cat .env
 ```
 
-### 2. Seleção de Unidade
-```
-1. Usuário seleciona unidade no dropdown
-2. main.js busca unit.value (ex: "0572")
-3. Formata para 4 dígitos: "0572"
-4. Cria comandos de partições e zonas
-5. Criptografa comandos com AES-256-CBC
-6. Envia via WebSocket para bridge
-7. Bridge descriptografa
-8. Bridge re-criptografa para TCP
-9. Envia ao servidor Viaweb
-10. Servidor responde
-11. Bridge descriptografa resposta TCP
-12. Bridge envia JSON puro via WebSocket
-13. Frontend atualiza UI com partições e zonas
+### Erro ao conectar SQL Server
+
+**Causa:** Credenciais incorretas ou banco indisponível
+
+**Solução:**
+```bash
+# Executar teste de conexão
+node test-db.js
+
+# Testar conectividade SQL
+sqlcmd -S localhost -U sa -P sua_senha
 ```
 
-### 3. Armação/Desarmação
-```
-1. Usuário marca partições/zonas
-2. Clica "Armar" ou "Desarmar"
-3. main.js coleta selecionados
-4. Cria comando com senha (8790)
-5. Mesmo fluxo de criptografia/envio
-6. Após 5s, busca status atualizado
-```
+### Comando não recebe resposta
 
-### 4. Eventos
-```
-1. Servidor Viaweb envia evento via TCP
-2. Bridge descriptografa
-3. Bridge envia JSON via WebSocket
-4. main.js processEvent(data):
-   - Adiciona a allEvents
-   - Se código 1130 → activeAlarms
-   - Se código falha → activePendentes
-   - Se código restauro → marca resolved
-5. updateEventList() atualiza tabela
-6. main.js envia ACK com ID limpo (só números)
-```
+**Causa:** Timeout ou equipamento offline
 
----
-
-## 🔐 Segurança e Criptografia
-
-### AES-256-CBC
-- **Chave:** 256 bits (32 bytes) - `CHAVE` em config.js
-- **IV:** 128 bits (16 bytes) - Dinâmico, atualiza a cada mensagem
-- **Modo:** CBC (Cipher Block Chaining)
-- **Padding:** PKCS7
-
-### Fluxo de IVs
-```
-Envio:
-  ivSend inicial = IV fixo
-  Após cada encrypt: ivSend = últimos 16 bytes do criptografado
-
-Recepção:
-  ivRecv inicial = IV fixo
-  Após cada decrypt: ivRecv = últimos 16 bytes do recebido
-```
-
-Isso garante que cada mensagem use um IV diferente, aumentando segurança.
-
----
-
-## 📊 Tipos de Eventos
-
-### Códigos Principais
-- **1130** - Disparo de alarme (🚨 vermelho)
-- **3130** - Restauro de sensor (✅ verde)
-- **1144** - Violação de Tamper (⚠️ laranja)
-- **1401-1402** - Desarmação (🔓 azul)
-- **3401-3403** - Armação (🛡️ azul)
-- **14xx** - Falhas de sistema (⚠️ laranja)
-- **34xx** - Restauros de falha (✅ verde)
-- **16xx** - Testes (ℹ️ ciano)
-
-### Sistema de Agrupamento
-- Eventos com mesmo local + código + zona são agrupados
-- Mostra "primeiro evento (X eventos)" na tabela
-- Clique abre modal para encerrar grupo
-
----
-
-## 🎨 UI/UX
-
-### Cores por Status
-- 🟢 Verde - OK, Armado, Restauro
-- 🔴 Vermelho - Disparo, Aberto, Desarmado
-- 🟠 Laranja - Falha, Tamper, Pendente
-- 🔵 Azul - Ação de usuário, Primário
-- ⚫ Cinza - Inibida, Desabilitado
-
-### Seções Recolhíveis
-- "Centrais de Alarme" - Começa fechada
-- "Eventos" - Começa aberta
-- Clique no header para expandir/recolher
-
-### Responsividade
-- Desktop: 2 colunas (partições | zonas)
-- Tablet: 1 coluna
-- Mobile: Interface adaptada, zonas em coluna única
-
----
-
-## 🐛 Debug e Logs
-
-### Console do Navegador
+**Solução:**
 ```javascript
-🔄 Carregando unidades...
-✅ 146 unidades carregadas
-🔍 ===== SELEÇÃO DE UNIDADE =====
-📤 idISEP que será enviado: 0572
-🚀 fetchPartitionsAndZones chamada...
+// Aumentar timeout em server.js
+const TIMEOUT_COMANDO = 300; // 300 segundos
+
+// Verificar status do equipamento primeiro
+// Enviar comando "status" antes de armar/desarmar
 ```
 
-### Terminal do bridge.js
-```
-🚀 Servidor Bridge iniciado na porta 8080
-📱 [08:00:00] Cliente WebSocket conectado
-📤 WS→TCP (JSON recebido): {...}
-📩 TCP→WS (JSON): {...}
-```
+### Eventos não aparecem no frontend
 
-### Níveis de Log
-- 🔄 Carregamento
-- ✅ Sucesso
-- ❌ Erro
-- 📤 Envio
-- 📩 Recebimento
-- 🔍 Debug
+**Causa:** WebSocket desconectado ou ACK não enviado
+
+**Solução:**
+```javascript
+// Verificar conexão WebSocket
+console.log('Clientes conectados:', wss.clients.size);
+
+// Garantir envio de ACK
+function enviarACK(idEvento) {
+    const ack = { resp: [{ id: idEvento }] };
+    socketViaweb.write(criptografar(JSON.stringify(ack)));
+}
+```
 
 ---
 
-## 🚀 Performance
+## 🤝 Contribuindo
 
-### Cache
-- Unidades: 5 minutos
-- Eventos: Máximo 300 na memória
-- Comandos pendentes: Limpa após resposta
+Contribuições são bem-vindas! Por favor:
 
-### Otimizações
-- Debounce na busca de unidades (300ms)
-- Auto-update opcional (30s)
-- Lazy rendering de zonas (8 por coluna)
-- CSS com will-change para animações
+1. Fork o projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/MinhaFeature`)
+3. Commit suas mudanças (`git commit -m 'Adiciona MinhaFeature'`)
+4. Push para a branch (`git push origin feature/MinhaFeature`)
+5. Abra um Pull Request
+
+### Diretrizes
+
+- Mantenha o código limpo e bem documentado
+- Adicione testes para novas funcionalidades
+- Atualize a documentação conforme necessário
+- Siga o padrão de código existente
 
 ---
 
-## 📱 Compatibilidade
+## 📝 Notas Importantes
 
-### Navegado
+1. **Segurança:** Nunca commitar `.env` com credenciais reais
+2. **Backup:** Fazer backup regular do banco de dados
+3. **Logs:** Monitorar `logs/server.log` para diagnósticos
+4. **Atualizações:** Manter Node.js e dependências atualizadas
+5. **Testes:** Executar `test-db.js` regularmente
+
+---
+
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+---
+
+## 📞 Suporte
+
+- **Email:** dsantos.dev@gmail.com
+- **Issues:** [GitHub Issues](https://github.com/seu-usuario/viaweb-cotrijal/issues)
+
+---
+
+**Última atualização:** Janeiro 2026  
+**Versão:** 1.0  
+**Mantido por:** Equipe Viaweb Cotrijal
+
+---
+
+⭐ **Se este projeto foi útil, considere dar uma estrela!**
