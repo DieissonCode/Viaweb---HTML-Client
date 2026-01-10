@@ -39,22 +39,82 @@
 
 ---
 
+Perfeito, Dieisson! Vou gerar o diagrama em Mermaid estilo "Node-centered" com server.js no centro conectando tudo — vai ficar limpo, profissional e 100% compatível com GitHub.
+
+Aqui está pronto para você copiar e colar no README:
+
+Markdown
+Copiar
 ## 2. ARQUITETURA GERAL DO SISTEMA
 
 ### Diagrama de Componentes
 
 
 
-┌─────────────────────────────────────────────────────────────────┐ │ NAVEGADOR WEB │ │ (Frontend HTML5 + JS) │ └────────────────────────────┬────────────────────────────────────┘ │ ┌────────┴────────┐ │ │ ┌───────▼────────┐ ┌────▼──────────┐ │ WebSocket │ │ REST API │ │ (porta 8090) │ │ (porta 3000) │ └───────┬────────┘ └────┬──────────┘ │ │ └────────┬────────┘ │ ┌────────────────────▼─────────────────────┐ │ SERVER.JS (Node.js) │ │ - Gerenciador de conexões │ │ - Criptografia AES-256-CBC │ │ - Roteador de comandos │ │ - Persistência em banco │ └────────────────────┬─────────────────────┘ │ ┌────────▼────────┐ │ Cliente TCP │ │ (porta 2700) │ └────────┬────────┘ │ ┌────────▼────────┐ │ Viaweb Receiver │ │ (10.0.20.43) │ └────────┬────────┘ │ ┌────────▼────────┐ │ Equipamentos │ │ (Alarmes) │ └─────────────────┘
+mermaid graph TB subgraph Frontend["🖥️ FRONTEND"] Browser["Navegador Web
+HTML5 + JavaScript"] end
 
-    ┌──────────────────────────────────┐
-    │      SQL Server (Banco)          │
-    │  - Logs de eventos               │
-    │  - Configurações                 │
-    │  - Histórico de operações        │
-    └──────────────────────────────────┘
+subgraph Backend["⚙️ BACKEND - SERVER.JS"]
+    WS["WebSocket<br/>Porta 8090"]
+    REST["API REST<br/>Porta 3000"]
+    HTTP["HTTP Estático<br/>Porta 8000"]
+    Core["Núcleo do Servidor<br/>- Roteador de Comandos<br/>- Criptografia AES-256-CBC<br/>- Gerenciador de Conexões"]
+end
+
+subgraph Viaweb["🔗 VIAWEB RECEIVER"]
+    TCP["Cliente TCP<br/>10.0.20.43:2700<br/>Protocolo Viaweb"]
+end
+
+subgraph Database["💾 SQL SERVER"]
+    DB["Banco de Dados<br/>- Logs de Eventos<br/>- Configurações<br/>- Histórico"]
+end
+
+subgraph Equipment["🚨 EQUIPAMENTOS"]
+    Alarme["Alarmes / Sensores<br/>- Partições<br/>- Zonas<br/>- Status"]
+end
+
+Browser -->|WebSocket| WS
+Browser -->|HTTP/REST| REST
+Browser -->|Arquivos Estáticos| HTTP
+
+WS --> Core
+REST --> Core
+HTTP --> Core
+
+Core -->|Criptografa/Descriptografa| TCP
+Core -->|Persiste Eventos| DB
+
+TCP -->|Comandos Criptografados| Viaweb
+Viaweb -->|Eventos Criptografados| TCP
+
+Viaweb -->|Controla| Alarme
+Alarme -->|Gera Eventos| Viaweb
+
+style Core fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
+style WS fill:#50C878,stroke:#2D7A4A,stroke-width:2px,color:#fff
+style REST fill:#50C878,stroke:#2D7A4A,stroke-width:2px,color:#fff
+style HTTP fill:#50C878,stroke:#2D7A4A,stroke-width:2px,color:#fff
+style TCP fill:#FF6B6B,stroke:#A63D3D,stroke-width:2px,color:#fff
+style DB fill:#FFB84D,stroke:#8B6914,stroke-width:2px,color:#fff
 
 ### Fluxo de Comunicação
+
+
+Pronto! Agora o diagrama vai ficar perfeito no GitHub, com:
+
+✅ Cores diferenciadas por camada
+✅ Estrutura clara e hierárquica
+✅ Setas indicando fluxo de dados
+✅ Legenda visual com emojis
+✅ Totalmente responsivo
+
+Quer que eu:
+
+Substitua o diagrama ASCII antigo por esse Mermaid no README?
+Crie mais diagramas Mermaid para os outros fluxos (Envio de Comando, Recepção de Evento)?
+Ambos — atualize tudo?
+
+Responda com: 1, 2, ou 3
 
 #### Inicialização do Sistema
 
