@@ -697,7 +697,7 @@
 	// ==============================
 	// HTTP server bootstrap
 		const httpServer = app.listen(HTTP_PORT, '0.0.0.0', () => {
-			logger.info(`\n🌐 Servidor HTTP rodando em:`);
+			logger.info(`🌐 Servidor HTTP rodando em:`);
 			logger.info(`   →		http://localhost`);
 			logger.info(`   →		http://192.9.100.100`);
 			logger.info(`   → Units:		http://192.9.100.100/api/units`);
@@ -715,7 +715,7 @@
 		logger.info(`🚀 WebSocket Bridge rodando em:`);
 		logger.info(`   → ws://localhost:${WS_PORT}`);
 		logger.info(`   → ws://192.9.100.100:${WS_PORT}`);
-		logger.info(`🔗 Redirecionando para ${TCP_HOST}:${TCP_PORT}\n`);
+		logger.info(`🔗 Redirecionando para ${TCP_HOST}:${TCP_PORT}`);
 
 	// ==============================
 	// WebSocket heartbeat configuration
@@ -1370,8 +1370,8 @@
 	});
 // =====================================================
 // Initialization completed
-	logger.info('\n✅ Viaweb Cotrijal system successfully started!');
-	logger.info('📊 Real-time logs enabled\n');
+	logger.info('✅ Viaweb Cotrijal system successfully started!');
+	logger.info('📊 Real-time logs enabled');
 // =====================================================
 // End of server.js
 /*						DOCUMENTAÇÃO DO server.js
