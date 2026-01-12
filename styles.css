@@ -26,9 +26,13 @@ h1 { text-align:center; font-size:1.5rem; font-weight:700; margin:0; display:fle
 @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.5;} }
 
 /* BOTÃO DE TEMA */
-.theme-toggle { position:absolute; right:20px; background:var(--bg-hover); border:2px solid var(--border); border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer; transition:.3s; display:flex; align-items:center; justify-content:center; padding:0; }
+.theme-toggle { background:var(--bg-hover); border:2px solid var(--border); border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer; transition:.3s; display:flex; align-items:center; justify-content:center; padding:0; }
 .theme-toggle:hover { transform:scale(1.1); box-shadow:0 4px 8px var(--shadow); }
 body.light-mode .theme-toggle { background:var(--bg-card); }
+
+/* BOTÃO DE LOGIN */
+#login-btn { background:var(--primary); color:#fff; border:2px solid var(--border); border-radius:6px; padding:8px 16px; font-size:14px; cursor:pointer; transition:.3s; font-weight:600; margin-left:auto; margin-right:8px; }
+#login-btn:hover { background:var(--primary-dark); transform:translateY(-1px); box-shadow:0 4px 8px var(--shadow); }
 
 /* PAINEL DE CONTROLE */
 #control-panel { background:var(--bg-card); border-radius:12px; padding:24px; margin-bottom:24px; box-shadow:0 4px 6px var(--shadow); }

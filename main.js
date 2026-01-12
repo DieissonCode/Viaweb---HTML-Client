@@ -39,6 +39,7 @@ if (!clientStatusEl && clientNumber?.parentElement) {
 
 // Bootstrap de usuário salvo antes de criar AuthManager
 let currentUser = null;
+let readOnly    = false;
 (function bootstrapCurrentUserFromState() {
     try {
         const saved = sessionStorage.getItem('viawebState');
@@ -97,20 +98,29 @@ function makeEventDedupeKey(cod, isep, comp, ts) {
     return `${cod}|${isep}|${normalizeComplementoForDedupe(comp)}|${ts}`;
 }
 
-// Bloqueio/desbloqueio de UI por autenticação
+// Bloqueio/desbloqueio de UI por autenticação (ou modo read‑only)
 function setAuthLock(locked) {
     const ctrls = [
         unitSelect, unitSearch, autoUpdateCheckbox,
         armButton, disarmButton, armAllButton, disarmAllButton,
         togglePartitionsBtn, toggleZonesBtn, confirmCloseEvent, cancelCloseEvent
     ];
-    ctrls.forEach(el => { if (el) el.disabled = locked; });
+    ctrls.forEach(el => {
+        if (el) el.disabled = locked;
+    });
 
-    document.querySelectorAll('#partitions-list input[type="checkbox"], #zones-columns input[type="checkbox"]').forEach(cb => cb.disabled = locked);
-    document.querySelectorAll('.tab-btn').forEach(btn => { btn.disabled = locked; });
-    if (eventsFilter) eventsFilter.disabled = locked;
+    // Desabilita checkboxes de partições e zonas
+    document.querySelectorAll('#partitions-list input[type="checkbox"], #zones-columns input[type="checkbox"]')
+        .forEach(cb => cb.disabled = locked);
+
+    // Desabilita botões de abas
+    document.querySelectorAll('.tab-btn')
+        .forEach(btn => btn.disabled = locked);
+
 }
+
 setAuthLock(!currentUser);
+
 
 function setUnitStatus(newStatus, sinceTs = null, isep = null) {
     const isChange = unitStatus !== newStatus || (sinceTs && unitStatusSince !== sinceTs);
@@ -385,152 +395,33 @@ class CloseEventModal {
     }
 }
 
-class AuthManager {
-    constructor() {
-        this.overlay = document.getElementById('auth-overlay');
-        this.userLabel = document.getElementById('auth-user-label');
-        this.logoutBtn = document.getElementById('auth-logout-btn');
-        this.inputUser = document.getElementById('auth-username');
-        this.inputPass = document.getElementById('auth-password');
-        this.errorBox = document.getElementById('auth-error');
-        this.submitBtn = document.getElementById('auth-submit-btn');
-        this.cancelBtn = document.getElementById('auth-cancel-btn');
-
-        if (!this.overlay || !this.inputUser || !this.inputPass || !this.userLabel) {
-            console.warn('AuthManager: elementos de autenticação não encontrados.');
-            return;
-        }
-
-        this.bindEvents();
-        this.renderUser();
-        if (currentUser) {
-            this.hide();
-            setAuthLock(false);
-        } else {
-            this.show();
-            setAuthLock(true);
-        }
-    }
-
-    bindEvents() {
-        this.submitBtn?.addEventListener('click', () => this.login());
-        this.cancelBtn?.addEventListener('click', () => this.hide());
-        this.logoutBtn?.addEventListener('click', () => this.logout());
-        this.overlay?.addEventListener('click', (e) => {
-            if (e.target === this.overlay) this.hide();
-        });
-        const handleEnter = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.login();
-            }
-        };
-        this.inputUser?.addEventListener('keydown', handleEnter);
-        this.inputPass?.addEventListener('keydown', handleEnter);
-
-        // Reabrir login clicando no rótulo quando não autenticado
-        this.userLabel?.addEventListener('click', () => {
-            if (!currentUser) this.show();
-        });
-
-        // Atalho Ctrl+L para abrir modal se não autenticado
-        document.addEventListener('keydown', (e) => {
-            if (!currentUser && e.ctrlKey && e.key.toLowerCase() === 'l') {
-                e.preventDefault();
-                this.show();
-            }
-        });
-    }
-
-    renderUser() {
-        if (currentUser) {
-            this.userLabel.textContent = `Usuário: ${currentUser.displayName}`;
-            this.logoutBtn.style.display = 'inline-flex';
-        } else {
-            this.userLabel.textContent = 'Usuário: Não autenticado (Clique aqui para Logar)';
-            this.logoutBtn.style.display = 'none';
-        }
-    }
-
-    show() {
-        if (!this.overlay || !this.inputUser || !this.inputPass) return;
-        this.overlay.style.display = 'block';
-        this.error('');
-        this.inputPass.value = '';
-        this.inputUser.focus();
-    }
-
-    hide() {
-        if (this.overlay) this.overlay.style.display = 'none';
-    }
-
-    error(msg) {
-        if (!this.errorBox) return;
-        if (msg) {
-            this.errorBox.textContent = msg;
-            this.errorBox.style.display = 'block';
-        } else {
-            this.errorBox.style.display = 'none';
-            this.errorBox.textContent = '';
-        }
-    }
-
-    async login() {
-        const usernameInput = sanitizeUsername(this.inputUser?.value || '');
-        const password = this.inputPass?.value;
-        if (!usernameInput || !password) {
-            this.error('Informe usuário e senha');
-            return;
-        }
-        this.error('');
-        this.submitBtn.disabled = true;
-
-        try {
-            const resp = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: usernameInput, password })
-            });
-            const data = await resp.json();
-            if (!data.success) {
-                this.error(data.error || 'Falha de login');
-                return;
-            }
-            const normalizedUser = {
-                ...data.user,
-                username: usernameInput,
-                displayName: `${usernameInput}@Cotrijal`
-            };
-            currentUser = normalizedUser;
-            window.currentUser = normalizedUser;
-            localStorage.setItem('currentUser', JSON.stringify(normalizedUser));
-            this.renderUser();
-            setAuthLock(false);
-            this.hide();
-        } catch (err) {
-            console.error('❌ Login error:', err);
-            this.error('Erro ao autenticar. Verifique sua rede.');
-        } finally {
-            this.submitBtn.disabled = false;
-            this.inputPass.value = '';
-        }
-    }
-
-    logout() {
-        currentUser = null;
-        window.currentUser = null;
-        localStorage.removeItem('currentUser');
-        this.renderUser();
-        setAuthLock(true);
-        this.show();
-    }
-}
-
 const closeEventUI = new CloseEventModal();
 let authManager = null;
 document.addEventListener('DOMContentLoaded', () => {
     authManager = new AuthManager();
-    window.authManager = authManager; // expõe para hot-reload
+
+    // Botão de login
+    const loginBtn = document.getElementById('login-btn');
+    if (loginBtn) {
+        loginBtn.addEventListener('click', () => {
+            authManager.show();
+        });
+    }
+
+    // Atualiza visibilidade do botão e estado de bloqueio
+    authManager.onAuthStateChanged = (user) => {
+        if (loginBtn) {
+            loginBtn.style.display = user ? 'none' : 'inline-flex';
+        }
+        setAuthLock(!user);
+    };
+
+    // Inicializa com o estado atual
+    authManager.onAuthStateChanged(authManager.getCurrentUser());
+
+    // Expondo globalmente
+    window.authManager = authManager;
+    window.currentUser = authManager.getCurrentUser();
 });
 
 // ---------- Índices e ingestão de eventos normalizados ----------
@@ -1193,10 +1084,30 @@ function sendCommand(data) {
         authManager?.show?.();
         return false;
     }
-    if (!ws || ws.readyState !== WebSocket.OPEN) { console.error('❌ WebSocket não conectado'); return false; }
-    if (ws.bufferedAmount > WS_BUFFER_LIMIT) { console.error('❌ Buffer WebSocket cheio, aguardando...'); return false; }
-    try { ws.send(JSON.stringify(data)); return true; }
-    catch (e) { console.error('❌ Erro ao enviar:', e); return false; }
+
+    // ---- NOVO BLOQUEIO ----
+    if (readOnly) {
+        console.warn('❌ Comando bloqueado: sessão somente‑leitura');
+        // Opcional: exibir toast/alert rápido
+        alert('⚠️ Você está em modo somente‑leitura e não pode enviar comandos.');
+        return false;
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error('❌ WebSocket não conectado');
+        return false;
+    }
+    if (ws.bufferedAmount > WS_BUFFER_LIMIT) {
+        console.error('❌ Buffer WebSocket cheio, aguardando...');
+        return false;
+    }
+    try {
+        ws.send(JSON.stringify(data));
+        return true;
+    } catch (e) {
+        console.error('❌ Erro ao enviar:', e);
+        return false;
+    }
 }
 
 function getSelectedPartitions() {

@@ -15,6 +15,7 @@
     <!-- Apple Touch Icon -->
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 
+
     <!-- Android Chrome -->
     <link rel="manifest" href="site.webmanifest">
     <link rel="stylesheet" href="styles.css">
@@ -210,9 +211,9 @@
     <h1 id="status" class="disconnected">
         <span id="status-text">Viaweb - Cotrijal</span>
         <span id="status-icon"></span>
-        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Alternar tema">
-            🌙
-        </button>
+        <!-- Login Button -->
+        <button id="login-btn" type="button" style="margin-left:auto;">🔑 Login</button>
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Alternar tema">🌙</button>
     </h1>
     <div id="auth-status-bar">
         <span id="auth-user-label">Usuário: Não autenticado</span>
@@ -430,6 +431,7 @@
     </script>
     <script src="purify.min.js"></script>
     <!-- <script src="/js/utils/sanitizer.js"></script> -->
+    <script src="auth-manager.js"></script>
     <script src="hot-reload.js"></script>
     <div id="auth-overlay" class="modal auth-modal">
         <div class="modal-content auth-modal-content">

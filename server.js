@@ -827,13 +827,13 @@
 
 				// Known activation types
 				const tipos = {
-					0: '[Scheduled Time]',
-					1: '[Monitoring]',
+					0: '[Horário Programado]',
+					1: '[Monitoramento]',
 					2: '[Facilitator]',
-					3: '[One-Time Password]',
-					4: '[One-Time Password]',
-					5: '[One-Time Password]',
-					6: '[IT - Maintenance]'
+					3: '[Senha de Uso Único]',
+					4: '[Senha de Uso Único]',
+					5: '[Senha de Uso Único]',
+					6: '[TI - Manutenção]'
 				};
 
 				// ==============================
@@ -849,8 +849,8 @@
 
 					// Define prefix based on event type
 					const baseDesc = cod.startsWith('3')
-						? 'Armed - '
-						: 'Disarmed - ';
+						? 'Armado - '
+						: 'Desarmado - ';
 
 					// Known type (fixed mapping)
 					if (tipos[zonaUsuario]) {
@@ -992,13 +992,13 @@
 
 				// Known activation types
 				const tipos = {
-					0: '[Scheduled Time]',
-					1: '[Monitoring]',
+					0: '[Horário Programado]',
+					1: '[Monitoramento]',
 					2: '[Facilitator]',
-					3: '[One-Time Password]',
-					4: '[One-Time Password]',
-					5: '[One-Time Password]',
-					6: '[IT - Maintenance]'
+					3: '[Senha de Uso Único]',
+					4: '[Senha de Uso Único]',
+					5: '[Senha de Uso Único]',
+					6: '[TI - Manutenção]'
 				};
 
 				// ==============================
@@ -1014,8 +1014,8 @@
 
 					// Define prefix based on event type
 					const baseDesc = cod.startsWith('3')
-						? 'Armed - '
-						: 'Disarmed - ';
+						? 'Armado - '
+						: 'Desarmado - ';
 
 					// Known type (fixed mapping)
 					if (tipos[zonaUsuario]) {
