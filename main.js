@@ -1,6 +1,7 @@
 ﻿// main.js - No ESM imports, uses global variables
 const WS_HOST = window.location.hostname || 'localhost';
-const WS_URL = `ws://${WS_HOST}:8090`;
+const WS_PORT = 8090;  // Defina a porta explicitamente
+const WS_URL = `ws://${WS_HOST}:${WS_PORT}`;
 
 const { CHAVE, IV, partitionNames, armDisarmCodes, falhaCodes, sistemaCodes, eventosDB } = window.ViawebConfig;
 const VC = window.ViawebCommands || {};
