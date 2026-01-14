@@ -7,7 +7,7 @@ const mssql = require('mssql');            // SQL Server driver
 const dbConfig = require('./db-config');   // Main DB config
 const logsDbConfig = require('./logsdbconfig'); // Logs DB config
 const { spawn } = require('child_process'); // PowerShell for AD auth
-const { LogsRepository } = require('./logsrepository'); // Logs repository
+const { LogsRepository } = require('./logsRepository'); // Logs repository
 const ViawebCommands = require('./viaweb-commands');     // Viaweb protocol helpers
 const WebSocket = require('ws');          // WebSocket server
 const { setupWebSocketServer } = require('./wsHandler');  // WebSocket handler
@@ -565,7 +565,8 @@ const cfg = {
 };
 
 // Inicializa o WebSocket Server
-const { wss, getTcpClient, sendTcpCommand } = setupWebSocketServer(null, cfg);
+const { wss, getTcpClient, sendAck } = setupWebSocketServer(null, { ...cfg, onTcpEvent: saveEventFromTcp });
+
 
 // ==============================
 // Database helper — fetch user by ISEP + ID_USUARIO
@@ -672,8 +673,8 @@ async function saveEventFromTcp(op) {
   if (isArmDisarm) {
     // Define prefix based on event type
     const baseDesc = cod.startsWith('3')
-      ? 'Armed - '
-      : 'Disarmed - ';
+      ? 'Armado - '
+      : 'Desarmado - ';
     // Known type (fixed mapping)
     if (tipos[zonaUsuario]) {
       descricao = `${baseDesc}${tipos[zonaUsuario]}`;
@@ -687,7 +688,7 @@ async function saveEventFromTcp(op) {
         userMatricula = userData.matricula;
         descricao = `${baseDesc}${userName}`;
       } else {
-        descricao = `${baseDesc}User ID ${zonaUsuario} Not Registered`;
+        descricao = `${baseDesc}Usuário ID ${zonaUsuario} não Cadastrado`;
       }
     }
   }
@@ -736,9 +737,9 @@ function sendAckToViaweb(eventId) {
   const ackCommand = ViawebCommands.createAckCommand(eventId);
 
   // Envia através do módulo wsHandler
-  if (sendTcpCommand) {
+  if (sendAck ) {
     try {
-      sendTcpCommand(ackCommand);
+      sendAck(ackCommand);
       logger.info(`✅ ACK sent: ${eventId}`);
     } catch (e) {
       logger.error('❌ Error sending ACK: ' + e.message);
