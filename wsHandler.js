@@ -6,7 +6,24 @@ const logger = require('./logger');
 const metrics = require('./metrics');
 const ViawebCommands = require('./viaweb-commands');
 
-// Configurações padrão
+/* ============================
+   DEBUG GLOBAL (liga/desliga)
+   ============================ */
+const VIAWEB_DEBUG = process.env.VIAWEB_DEBUG === '1';
+
+function dbg(...args) {
+    if (VIAWEB_DEBUG) logger.debug('[VIAWEB-DEBUG]', ...args);
+}
+
+function bufHex(buf, max = 160) {
+    if (!Buffer.isBuffer(buf)) return '';
+    const h = buf.toString('hex');
+    return h.length > max ? h.slice(0, max) + '…' : h;
+}
+
+/* ============================
+   Configurações padrão
+   ============================ */
 const DEFAULTS = {
     WS_PORT: 8090,
     WS_HOST: '0.0.0.0',
@@ -14,13 +31,15 @@ const DEFAULTS = {
     TCP_PORT: 2700,
     CHAVE_HEX: '94EF1C592113E8D27F5BB4C5D278BF3764292CEA895772198BA9435C8E9B97FD',
     IV_HEX: '70FC01AA8FCA3900E384EA28A5B7BCEF',
-    HEARTBEAT_INTERVAL: 30000,   // 30s
-    HEARTBEAT_TIMEOUT: 60000,    // 60s sem ping → drop
-    RECONNECT_DELAY: 3000,       // 3s entre tentativas
-    MAX_RECONNECT_DELAY: 30000   // 30s (exponencial)
+    HEARTBEAT_INTERVAL: 30000,
+    HEARTBEAT_TIMEOUT: 60000,
+    RECONNECT_DELAY: 3000,
+    MAX_RECONNECT_DELAY: 30000
 };
 
-// Funções de criptografia
+/* ============================
+   Criptografia AES-256-CBC
+   ============================ */
 function encrypt(plainText, keyBuffer, ivBuffer) {
     const plainBytes = Buffer.from(plainText, 'utf8');
     const blockSize = 16;
@@ -28,8 +47,10 @@ function encrypt(plainText, keyBuffer, ivBuffer) {
     const padded = Buffer.alloc(plainBytes.length + padLen);
     plainBytes.copy(padded);
     padded.fill(padLen, plainBytes.length);
+
     const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, ivBuffer);
     cipher.setAutoPadding(false);
+
     let encrypted = cipher.update(padded);
     encrypted = Buffer.concat([encrypted, cipher.final()]);
     return encrypted;
@@ -38,17 +59,23 @@ function encrypt(plainText, keyBuffer, ivBuffer) {
 function decrypt(encryptedBuffer, keyBuffer, ivBuffer) {
     const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, ivBuffer);
     decipher.setAutoPadding(false);
+
     let decrypted = decipher.update(encryptedBuffer);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
+
     const padLen = decrypted[decrypted.length - 1];
     return decrypted.slice(0, -padLen).toString('utf8');
 }
 
-function hexToBuffer(hex) { return Buffer.from(hex, 'hex'); }
+function hexToBuffer(hex) {
+    return Buffer.from(hex, 'hex');
+}
 
-// Helpers de deduplicação
+/* ============================
+   Deduplicação WS (ORIGINAL)
+   ============================ */
 const wsEventDedupeCache = new Map();
-const WS_DEDUPE_TTL = 120000; // 2 min
+const WS_DEDUPE_TTL = 120000;
 
 function pruneWsDedupeCache() {
     const now = Date.now();
@@ -66,22 +93,21 @@ function shouldForwardToClients(op) {
     return true;
 }
 
-/**
- * @param {http.Server} httpServer - servidor HTTP já criado
- * @param {Object} options - sobrescreve valores de DEFAULTS
- */
+/* ============================
+   WebSocket Server
+   ============================ */
 function setupWebSocketServer(httpServer, options = {}) {
     const cfg = { ...DEFAULTS, ...options };
 
-    // Estado global da ponte TCP
     let tcpClient = null;
     let tcpIdentSent = false;
+    let tcpReady = false;
+
     let keyBuffer = hexToBuffer(cfg.CHAVE_HEX);
     let ivSend = hexToBuffer(cfg.IV_HEX);
     let ivRecv = hexToBuffer(cfg.IV_HEX);
     let tcpRecvBuf = Buffer.alloc(0);
 
-    // Cria o servidor WebSocket
     const wss = new WebSocket.Server({
         port: cfg.WS_PORT,
         host: cfg.WS_HOST
@@ -89,11 +115,13 @@ function setupWebSocketServer(httpServer, options = {}) {
 
     logger.info(`WebSocket Bridge running on ws://${cfg.WS_HOST}:${cfg.WS_PORT}`);
 
-    // Heartbeat - detecta clientes "zumbi"
+    /* ============================
+       Heartbeat
+       ============================ */
     const heartbeat = setInterval(() => {
         wss.clients.forEach(ws => {
             if (ws.isAlive === false) {
-                logger.warn('WebSocket client did not respond to ping - terminating');
+                logger.warn('WebSocket client did not respond to ping');
                 return ws.terminate();
             }
             ws.isAlive = false;
@@ -101,34 +129,48 @@ function setupWebSocketServer(httpServer, options = {}) {
         });
     }, cfg.HEARTBEAT_INTERVAL);
 
-    // Função que garante a existência da conexão TCP
+    /* ============================
+       TCP Connection
+       ============================ */
     function ensureTcpConnection() {
         if (tcpClient && !tcpClient.destroyed) return;
 
         logger.info('Establishing TCP connection to Viaweb...');
-        tcpClient = net.createConnection({ host: cfg.TCP_HOST, port: cfg.TCP_PORT }, () => {
-            logger.info('TCP connected');
-            // Envia IDENT apenas uma vez (ou após reconexão)
-            if (!tcpIdentSent) {
+        tcpClient = net.createConnection(
+            { host: cfg.TCP_HOST, port: cfg.TCP_PORT },
+            () => {
+                logger.info('TCP connected');
+
+                ivSend = hexToBuffer(cfg.IV_HEX);
+                ivRecv = hexToBuffer(cfg.IV_HEX);
+                tcpRecvBuf = Buffer.alloc(0);
+                tcpIdentSent = false;
+                tcpReady = false;
+
                 setTimeout(() => {
                     const ident = ViawebCommands.createIdentCommand(
-                        "Viaweb Cotrijal", 1, 60, 0
+                        'Viaweb Cotrijal', 1, 60, 0
                     );
+
                     const payload = JSON.stringify(ident);
+                    dbg('IDENT PLAIN:', payload);
+
                     const enc = encrypt(payload, keyBuffer, ivSend);
+                    dbg('IDENT ENCRYPTED HEX:', bufHex(enc));
+
                     ivSend = enc.slice(-16);
                     tcpClient.write(enc);
+
                     tcpIdentSent = true;
                     logger.info('IDENT sent to Viaweb server');
                 }, 100);
             }
-        });
+        );
 
-        // Recepção de dados TCP → decrypt → parse → forward WS
-        tcpClient.on('data', async (data) => {
+        tcpClient.on('data', async data => {
             try {
-                // Acumula até ter blocos de 16 bytes (AES-CBC)
                 tcpRecvBuf = Buffer.concat([tcpRecvBuf, data]);
+
                 const blockSize = 16;
                 const fullLen = Math.floor(tcpRecvBuf.length / blockSize) * blockSize;
                 if (fullLen === 0) return;
@@ -136,52 +178,68 @@ function setupWebSocketServer(httpServer, options = {}) {
                 const toDecrypt = tcpRecvBuf.slice(0, fullLen);
                 tcpRecvBuf = tcpRecvBuf.slice(fullLen);
 
+                dbg('TCP RAW HEX:', bufHex(toDecrypt));
+
                 const plain = decrypt(toDecrypt, keyBuffer, ivRecv);
+                dbg('TCP DECRYPTED RAW:', plain);
+
                 ivRecv = toDecrypt.slice(-16);
 
                 const jsonStr = plain.replace(/\x00/g, '').trim();
                 if (!jsonStr) return;
 
+                dbg('TCP JSON CLEAN:', jsonStr);
+
                 const parsed = JSON.parse(jsonStr);
-                // Se for evento, salva no DB e decide se repassa
+
+                if (parsed?.resp && !tcpReady) {
+                    tcpReady = true;
+                    logger.info('IDENT confirmed – TCP session READY');
+                }
+
                 if (parsed.oper && Array.isArray(parsed.oper)) {
                     for (const op of parsed.oper) {
-                        if (op.acao === 'evento') {
-                            if (cfg.onTcpEvent) await cfg.onTcpEvent(op);
-                            if (!shouldForwardToClients(op)) continue;
+                        if (op.acao === 'evento') {    if (cfg.onTcpEvent) await cfg.onTcpEvent(op);
+                        sendAck(op.id);
+                        if (!shouldForwardToClients(op)) continue;
                         }
                     }
                 }
 
-                // Broadcast para todos os clientes WS
                 wss.clients.forEach(ws => {
-                    if (ws.readyState === WebSocket.OPEN) ws.send(jsonStr);
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(jsonStr);
+                    }
                 });
 
                 metrics.recordEvent();
             } catch (err) {
-                logger.error('Error processing TCP data: ' + err.message);
+                logger.error('TCP processing error: ' + err.message);
                 metrics.recordError();
             }
         });
 
-        // Tratamento de erros / fechamento da conexão TCP
         tcpClient.on('error', err => {
             logger.error('TCP error: ' + err.message);
             metrics.recordError();
         });
+
         tcpClient.on('close', () => {
             logger.warn('TCP connection closed - will reconnect');
             tcpClient = null;
             tcpIdentSent = false;
+            tcpReady = false;
             tcpRecvBuf = Buffer.alloc(0);
             scheduleTcpReconnect();
         });
     }
 
-    // Reconexão automática da camada TCP
+    /* ============================
+       TCP Reconnect
+       ============================ */
     let reconnectAttempts = 0;
     let reconnectTimer = null;
+
     function scheduleTcpReconnect() {
         if (reconnectTimer) return;
         const delay = Math.min(
@@ -195,64 +253,81 @@ function setupWebSocketServer(httpServer, options = {}) {
         }, delay);
     }
 
-    // Quando um cliente WS se conecta
+    /* ============================
+       WS CLIENT CONNECT
+       ============================ */
     wss.on('connection', ws => {
         logger.info('WebSocket client connected');
         metrics.recordConnection();
 
-        // Flags de heartbeat
         ws.isAlive = true;
         ws.on('pong', () => (ws.isAlive = true));
 
-        // Garante que a camada TCP está ativa
         ensureTcpConnection();
 
-        // Mensagens vindas do cliente WS → encaminha ao TCP (encriptado)
         ws.on('message', async data => {
+            if (!tcpReady) {
+                dbg('WS BLOCKED (IDENT not confirmed):', data.toString());
+                return;
+            }
+
             try {
                 const txt = data.toString();
+                dbg('WS PLAIN:', txt);
+
                 const enc = encrypt(txt, keyBuffer, ivSend);
+                dbg('WS ENCRYPTED HEX:', bufHex(enc));
+
                 ivSend = enc.slice(-16);
+
                 if (tcpClient && tcpClient.writable) {
                     tcpClient.write(enc);
                 } else {
                     logger.warn('TCP unavailable when sending WS command');
                 }
+
                 metrics.recordCommand();
             } catch (e) {
-                logger.error('Failed to send WS→TCP: ' + e.message);
+                logger.error('WS→TCP error: ' + e.message);
                 metrics.recordError();
             }
         });
 
-        // Desconexão do cliente WS
         ws.on('close', () => {
             logger.info('WebSocket client disconnected');
             metrics.recordDisconnection();
         });
+
         ws.on('error', err => {
             logger.error('WS error: ' + err.message);
             metrics.recordError();
         });
     });
 
-    // Limpeza ao encerrar o processo
     wss.on('close', () => {
         clearInterval(heartbeat);
         if (tcpClient) tcpClient.destroy();
         logger.info('WebSocket server closed');
     });
 
-    // Função para enviar ACK para o servidor Viaweb
+    /* ============================
+       ACK (RESTAURADO)
+       ============================ */
     function sendAck(eventId) {
-        if (!eventId || !tcpClient || !tcpClient.writable) return false;
+        if (!eventId || !tcpClient || !tcpClient.writable || !tcpReady) return false;
 
         try {
             const ackCmd = ViawebCommands.createAckCommand(eventId);
             const payload = JSON.stringify(ackCmd);
+
+            dbg('ACK PLAIN:', payload);
+
             const enc = encrypt(payload, keyBuffer, ivSend);
+            dbg('ACK ENCRYPTED HEX:', bufHex(enc));
+
             ivSend = enc.slice(-16);
             tcpClient.write(enc);
+
             logger.info(`ACK sent: ${eventId}`);
             return true;
         } catch (e) {
@@ -261,8 +336,8 @@ function setupWebSocketServer(httpServer, options = {}) {
         }
     }
 
-    return { 
-        wss, 
+    return {
+        wss,
         getTcpClient: () => tcpClient,
         sendAck
     };

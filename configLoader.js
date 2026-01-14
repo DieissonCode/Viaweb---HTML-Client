@@ -12,9 +12,9 @@ module.exports = {
         database: process.env.DB_DATABASE
     },
     logsDb: {
-        user: process.env.LOGS_DB_USER,
-        password: process.env.LOGS_DB_PASSWORD,
-        server: process.env.LOGS_DB_SERVER,
-        database: process.env.LOGS_DB_DATABASE
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        server: process.env.DB_SERVER,
+        database: process.env.DB_DATABASE_LOGS
     }
 };
