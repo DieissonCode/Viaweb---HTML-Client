@@ -2,6 +2,8 @@
 (function() {
     'use strict';
     
+    const CACHE_KEY = 'viaweb_users_cache';
+    const CACHE_TS_KEY = 'viaweb_users_ts';
     const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
     let cachedUsers = null;
     let cacheTimestamp = null;
@@ -13,58 +15,38 @@
 
     console.log(`🔗 API de usuários configurada para: ${API_URL}`);
 
-    // Title Case para cargos (respeita acentuação)
-    function toTitleCaseCargo(str = '') {
-        return String(str)
-            .toLocaleLowerCase('pt-BR')
-            .split(/\s+/)
-            .filter(Boolean)
-            .map(p => p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1))
-            .join(' ');
-    }
-
-    async function getUsers(forceRefresh = false) {
-        if (!forceRefresh && cachedUsers && cacheTimestamp) {
-            const now = Date.now();
-            if (now - cacheTimestamp < CACHE_DURATION) {
-                console.log('📦 Usando usuários em cache');
-                return cachedUsers;
-            }
-        }
-
+    // ========================================
+    // PERSISTÊNCIA (localStorage)
+    // ========================================
+    function saveToLocalStorage() {
         try {
-            console.log('🔍 Buscando usuários da API...');
-            const response = await fetch(API_URL);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            
-            if (result.success && result.data) {
-                cachedUsers = result.data;
-                cacheTimestamp = Date.now();
-                
-                // Constrói índices para busca rápida
-                buildIndexes();
-                
-                console.log(`✅ ${cachedUsers.length} usuários carregados da API`);
-                return cachedUsers;
-            } else {
-                throw new Error('Formato de resposta inválido');
-            }
-        } catch (err) {
-            console.error('❌ Erro ao buscar usuários:', err);
-            if (cachedUsers) {
-                console.log('⚠️ Usando cache antigo devido a erro');
-                return cachedUsers;
-            }
-            console.log('⚠️ Retornando array vazio');
-            return [];
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cachedUsers));
+            localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
+        } catch (e) {
+            console.warn('⚠️ Falha ao salvar cache:', e);
         }
     }
 
+    function loadFromLocalStorage() {
+        try {
+            const saved = localStorage.getItem(CACHE_KEY);
+            const ts = localStorage.getItem(CACHE_TS_KEY);
+            if (saved) {
+                cachedUsers = JSON.parse(saved);
+                cacheTimestamp = parseInt(ts) || Date.now();
+                buildIndexes();
+                console.log(`✅ ${cachedUsers.length} usuários carregados do localStorage`);
+                return true;
+            }
+        } catch (e) {
+            console.warn('⚠️ Falha ao carregar cache:', e);
+        }
+        return false;
+    }
+
+    // ========================================
+    // ÍNDICES
+    // ========================================
     function buildIndexes() {
         usersByMatricula.clear();
         usersByIsep.clear();
@@ -93,6 +75,79 @@
         console.log(`📊 Índices construídos: ${usersByMatricula.size} IDs, ${usersByIsep.size} ISEPs`);
     }
 
+    // ========================================
+    // FORMATAÇÃO
+    // ========================================
+    function toTitleCaseCargo(str = '') {
+        return String(str)
+            .toLocaleLowerCase('pt-BR')
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(p => p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1))
+            .join(' ');
+    }
+
+    // ========================================
+    // CARREGAMENTO (com cache persistente)
+    // ========================================
+    async function getUsers(forceRefresh = false) {
+        // 1. Tenta carregar do localStorage PRIMEIRO (boot instantâneo)
+        if (!cachedUsers) {
+            loadFromLocalStorage();
+        }
+        
+        // 2. Verifica se precisa atualizar
+        if (!forceRefresh && cachedUsers && cacheTimestamp) {
+            const now = Date.now();
+            if (now - cacheTimestamp < CACHE_DURATION) {
+                console.log('📦 Usando usuários em cache');
+                return cachedUsers;
+            }
+        }
+        
+        // 3. Busca da API
+        try {
+            console.log('🔍 Buscando usuários da API...');
+            const response = await fetch(API_URL);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.data && result.data.length > 0) {
+                // MERGE incremental (preserva dados locais se API falhar parcialmente)
+                cachedUsers = result.data;
+                cacheTimestamp = Date.now();
+                buildIndexes();
+                saveToLocalStorage(); // ← PERSISTE
+                console.log(`✅ ${cachedUsers.length} usuários atualizados da API`);
+            } else if (!cachedUsers) {
+                // Só limpa se não tinha nada antes
+                cachedUsers = [];
+                console.log('⚠️ API retornou vazio e não há cache');
+            } else {
+                // Se API retornar vazio MAS já tinha cache, MANTÉM o cache
+                console.log('⚠️ API retornou vazio, mantendo cache existente');
+            }
+            
+            return cachedUsers;
+        } catch (err) {
+            console.error('❌ Erro ao buscar usuários:', err);
+            // Mantém cache antigo em caso de erro
+            if (cachedUsers) {
+                console.log('⚠️ Usando cache antigo devido a erro');
+                return cachedUsers;
+            }
+            console.log('⚠️ Retornando array vazio');
+            return [];
+        }
+    }
+
+    // ========================================
+    // CONSULTAS
+    // ========================================
     function getUserByMatricula(matricula) {
         if (!usersByMatricula.size && cachedUsers) {
             buildIndexes();
@@ -125,6 +180,9 @@
         return null;
     }
 
+    // ========================================
+    // FORMATAÇÃO DE SAÍDA
+    // ========================================
     function formatUserName(user) {
         if (!user) return 'Usuário Desconhecido';
         
@@ -153,6 +211,9 @@
         return info.join('\n');
     }
 
+    // ========================================
+    // UTILIDADES
+    // ========================================
     function hasUsersData() {
         return cachedUsers && cachedUsers.length > 0;
     }
@@ -162,7 +223,9 @@
         cacheTimestamp = null;
         usersByMatricula.clear();
         usersByIsep.clear();
-        console.log('🗑️ Cache de usuários limpo');
+        localStorage.removeItem(CACHE_KEY);
+        localStorage.removeItem(CACHE_TS_KEY);
+        console.log('🗑️ Cache de usuários limpo (memória + localStorage)');
     }
 
     function getUsersStats() {
@@ -181,7 +244,9 @@
         };
     }
     
-    // Expose to global scope
+    // ========================================
+    // EXPOSIÇÃO GLOBAL
+    // ========================================
     window.UsersDB = {
         getUsers,
         getUserByMatricula,

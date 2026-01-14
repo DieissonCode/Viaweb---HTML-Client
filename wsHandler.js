@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const logger = require('./logger');
 const metrics = require('./metrics');
 const ViawebCommands = require('./viaweb-commands');
+const logsRepo = require('./logsRepository');
 
 /* ============================
    DEBUG GLOBAL (liga/desliga)

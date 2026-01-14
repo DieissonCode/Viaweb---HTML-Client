@@ -119,9 +119,9 @@ class LogsRepository {
         dedupeCache.set(dedupeKey, { ts: Date.now(), count: 1 });
 
         const sql = `
-            INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, DataHora, RawEvent)
+            INSERT INTO LOGS.Events (Codigo, CodigoEvento, Complemento, Particao, Local, ISEP, Descricao, DataEvento, RawEvent)
             OUTPUT INSERTED.Id
-            VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), GETDATE(), @RawEvent);
+            VALUES (@Codigo, @CodigoEvento, @Complemento, @Particao, @Local, @ISEP, @Descricao, CONVERT(datetime2, @DataEventoStr, 120), @RawEvent);
         `;
 
         const params = {

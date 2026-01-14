@@ -485,6 +485,9 @@ function ingestNormalizedEvent(ev) {
 // ---------- Normalização de evento recebido em tempo real ----------
 function processEvent(data) {
     // data pode vir como {oper:[op]} ou op direto
+    if (!window.UsersDB?.hasUsersData?.()) {
+        console.warn('⚠️ UsersDB não carregado ainda, evento será processado sem enriquecimento');
+    }
     const msg = data.oper?.[0] || data;
     const cod = msg.codigoEvento || 'N/A';
     if (cod === "1412") return;
