@@ -655,12 +655,12 @@ async function saveEventFromTcp(op) {
   ];
   // Known activation types
   const tipos = {
-    0: '[Scheduled Time]',
-    1: '[Monitoring]',
-    2: '[Facilitator]',
-    3: '[One-Time Password]',
-    4: '[One-Time Password]',
-    5: '[One-Time Password]',
+    0: '[Horário Programado]',
+    1: '[Monitoramento]',
+    2: '[Facilitador]',
+    3: '[Senha Única]',
+    4: '[Senha Única]',
+    5: '[Senha Única]',
     6: '[IT - Maintenance]'
   };
   // ==============================

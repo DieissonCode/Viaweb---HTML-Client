@@ -562,7 +562,7 @@ function processEvent(data) {
         const usersByIsep = window.UsersDB.getUsersByIsep(String(local)) || [];
         const userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
 
-        if (userData && !tipos[zonaUsuario]) {
+        if (userData && !tipos[zonaUsuario]) {  // Se não for do 0 ao 6, verifica o map de usuários
             userName = window.UsersDB.formatUserName(userData);
             userId = userData.ID_USUARIO || null;
             userMatricula = userData.matricula || null;
@@ -592,7 +592,6 @@ function processEvent(data) {
 
     ingestNormalizedEvent(ev);
     updateEventList();
-
     updateCounts();
 }
 
@@ -965,7 +964,8 @@ function updateEventList() {
         else if (cod.startsWith('16')) tr.classList.add('teste');
 
         const partName = getPartitionName(ev.particao, ev.clientId);
-        const descBase = ev.baseDescricao || ev.descricao || '';
+        const descBase = ev.descricao || ev.baseDescricao ||  '';
+        //console.log(`${ev.descricao} | ${descBase}`);
         let desc = descBase;
         if (count > 1) desc += ` (${count} eventos)`;
 

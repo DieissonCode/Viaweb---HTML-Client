@@ -1,4 +1,4 @@
-﻿// users-db.js - User management (global pattern, no ESM)
+// users-db.js - User management (global pattern, no ESM)
 (function() {
     'use strict';
     
@@ -20,10 +20,48 @@
     // ========================================
     function saveToLocalStorage() {
         try {
-            localStorage.setItem(CACHE_KEY, JSON.stringify(cachedUsers));
+            if (!cachedUsers || cachedUsers.length === 0) {
+                console.warn('⚠️ Tentativa de salvar cache vazio - IGNORADO');
+                return;
+            }
+            
+            // Remove campos desnecessários para economizar espaço
+            const minimal = cachedUsers.map(u => ({
+                ID_USUARIO: u.ID_USUARIO,
+                matricula: u.matricula,
+                idIsep: u.idIsep,
+                nome: u.nome,
+                cargo: u.cargo
+            }));
+            
+            const jsonStr = JSON.stringify(minimal);
+            const sizeKB = (jsonStr.length / 1024).toFixed(2);
+            
+            localStorage.setItem(CACHE_KEY, jsonStr);
             localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
+            
+            console.log(`✅ Cache salvo: ${minimal.length} usuários (${sizeKB} KB)`);
         } catch (e) {
-            console.warn('⚠️ Falha ao salvar cache:', e);
+            console.error('❌ Falha ao salvar cache:', e.message);
+            
+            if (e.name === 'QuotaExceededError') {
+                console.warn('💾 Espaço insuficiente, limpando localStorage...');
+                localStorage.clear();
+                try {
+                    const minimal = cachedUsers.map(u => ({
+                        ID_USUARIO: u.ID_USUARIO,
+                        matricula: u.matricula,
+                        idIsep: u.idIsep,
+                        nome: u.nome,
+                        cargo: u.cargo
+                    }));
+                    localStorage.setItem(CACHE_KEY, JSON.stringify(minimal));
+                    localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
+                    console.log('✅ Cache salvo após limpeza');
+                } catch (e2) {
+                    console.error('❌ Falha mesmo após limpeza:', e2.message);
+                }
+            }
         }
     }
 
@@ -31,15 +69,30 @@
         try {
             const saved = localStorage.getItem(CACHE_KEY);
             const ts = localStorage.getItem(CACHE_TS_KEY);
-            if (saved) {
-                cachedUsers = JSON.parse(saved);
-                cacheTimestamp = parseInt(ts) || Date.now();
-                buildIndexes();
-                console.log(`✅ ${cachedUsers.length} usuários carregados do localStorage`);
-                return true;
+            
+            if (!saved) {
+                console.log('ℹ️ Nenhum cache encontrado no localStorage');
+                return false;
             }
+            
+            const parsed = JSON.parse(saved);
+            
+            if (!Array.isArray(parsed) || parsed.length === 0) {
+                console.warn('⚠️ Cache inválido ou vazio:', parsed?.length || 0);
+                localStorage.removeItem(CACHE_KEY);
+                localStorage.removeItem(CACHE_TS_KEY);
+                return false;
+            }
+            
+            cachedUsers = parsed;
+            cacheTimestamp = parseInt(ts) || Date.now();
+            buildIndexes();
+            console.log(`✅ ${cachedUsers.length} usuários carregados do localStorage`);
+            return true;
         } catch (e) {
-            console.warn('⚠️ Falha ao carregar cache:', e);
+            console.error('❌ Falha ao carregar cache:', e);
+            localStorage.removeItem(CACHE_KEY);
+            localStorage.removeItem(CACHE_TS_KEY);
         }
         return false;
     }
@@ -54,7 +107,6 @@
         if (!cachedUsers) return;
         
         cachedUsers.forEach(user => {
-            // Índice por matrícula/ID_USUARIO (zona/usuário)
             if (user.matricula) {
                 usersByMatricula.set(String(user.matricula), user);
             }
@@ -62,7 +114,6 @@
                 usersByMatricula.set(String(user.ID_USUARIO), user);
             }
             
-            // Índice por ISEP (pode ter múltiplos usuários por ISEP)
             if (user.idIsep) {
                 const isep = String(user.idIsep);
                 if (!usersByIsep.has(isep)) {
@@ -72,7 +123,88 @@
             }
         });
         
-        console.log(`📊 Índices construídos: ${usersByMatricula.size} IDs, ${usersByIsep.size} ISEPs`);
+        console.log(`📊 Índices: ${usersByMatricula.size} IDs, ${usersByIsep.size} ISEPs`);
+    }
+
+    // ========================================
+    // CARREGAMENTO
+    // ========================================
+    async function getUsers(forceRefresh = false) {
+        // 1. Boot instantâneo do localStorage
+        if (!cachedUsers || cachedUsers.length === 0) {
+            const loaded = loadFromLocalStorage();
+            if (loaded && cachedUsers && cachedUsers.length > 0) {
+                console.log(`✅ ${cachedUsers.length} usuários carregados (boot)`);
+            }
+        }
+        
+        // 2. Verifica cache válido
+        if (!forceRefresh && cachedUsers && cachedUsers.length > 0 && cacheTimestamp) {
+            const now = Date.now();
+            if (now - cacheTimestamp < CACHE_DURATION) {
+                console.log(`📦 Cache OK: ${cachedUsers.length} usuários`);
+                return cachedUsers;
+            }
+        }
+        
+        // 3. Busca da API
+        try {
+            console.log('🔍 Buscando da API...');
+            const response = await fetch(API_URL);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            console.log('📥 API:', {
+                success: result.success,
+                count: result.data?.length || 0
+            });
+            
+            if (result.success && result.data && result.data.length > 0) {
+                cachedUsers = result.data;
+                cacheTimestamp = Date.now();
+                buildIndexes();
+                saveToLocalStorage();
+                console.log(`✅ ${cachedUsers.length} usuários da API`);
+                return cachedUsers;
+            } else {
+                if (cachedUsers && cachedUsers.length > 0) {
+                    console.warn(`⚠️ API vazia, mantendo ${cachedUsers.length} do cache`);
+                    return cachedUsers;
+                } else {
+                    console.error('❌ API vazia e sem cache!');
+                    return [];
+                }
+            }
+        } catch (err) {
+            console.error('❌ Erro API:', err.message);
+            if (cachedUsers && cachedUsers.length > 0) {
+                console.warn(`⚠️ Erro, usando ${cachedUsers.length} do cache`);
+                return cachedUsers;
+            }
+            return [];
+        }
+    }
+
+    // ========================================
+    // CONSULTAS
+    // ========================================
+    function getUserByMatricula(matricula) {
+        if (usersByMatricula.size === 0 && cachedUsers) buildIndexes();
+        return usersByMatricula.get(String(matricula)) || null;
+    }
+
+    function getUsersByIsep(idIsep) {
+        if (usersByIsep.size === 0 && cachedUsers) buildIndexes();
+        return usersByIsep.get(String(idIsep)) || [];
+    }
+
+    function getUserByMatriculaAndIsep(matricula, idIsep) {
+        const user = getUserByMatricula(matricula);
+        return (user && user.idIsep === String(idIsep)) ? user : null;
     }
 
     // ========================================
@@ -87,117 +219,16 @@
             .join(' ');
     }
 
-    // ========================================
-    // CARREGAMENTO (com cache persistente)
-    // ========================================
-    async function getUsers(forceRefresh = false) {
-        // 1. Tenta carregar do localStorage PRIMEIRO (boot instantâneo)
-        if (!cachedUsers) {
-            loadFromLocalStorage();
-        }
-        
-        // 2. Verifica se precisa atualizar
-        if (!forceRefresh && cachedUsers && cacheTimestamp) {
-            const now = Date.now();
-            if (now - cacheTimestamp < CACHE_DURATION) {
-                console.log('📦 Usando usuários em cache');
-                return cachedUsers;
-            }
-        }
-        
-        // 3. Busca da API
-        try {
-            console.log('🔍 Buscando usuários da API...');
-            const response = await fetch(API_URL);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            
-            if (result.success && result.data && result.data.length > 0) {
-                // MERGE incremental (preserva dados locais se API falhar parcialmente)
-                cachedUsers = result.data;
-                cacheTimestamp = Date.now();
-                buildIndexes();
-                saveToLocalStorage(); // ← PERSISTE
-                console.log(`✅ ${cachedUsers.length} usuários atualizados da API`);
-            } else if (!cachedUsers) {
-                // Só limpa se não tinha nada antes
-                cachedUsers = [];
-                console.log('⚠️ API retornou vazio e não há cache');
-            } else {
-                // Se API retornar vazio MAS já tinha cache, MANTÉM o cache
-                console.log('⚠️ API retornou vazio, mantendo cache existente');
-            }
-            
-            return cachedUsers;
-        } catch (err) {
-            console.error('❌ Erro ao buscar usuários:', err);
-            // Mantém cache antigo em caso de erro
-            if (cachedUsers) {
-                console.log('⚠️ Usando cache antigo devido a erro');
-                return cachedUsers;
-            }
-            console.log('⚠️ Retornando array vazio');
-            return [];
-        }
-    }
-
-    // ========================================
-    // CONSULTAS
-    // ========================================
-    function getUserByMatricula(matricula) {
-        if (!usersByMatricula.size && cachedUsers) {
-            buildIndexes();
-        }
-        
-        const user = usersByMatricula.get(String(matricula));
-        if (user) {
-            console.log(`👤 Usuário encontrado: ${user.nome} (${matricula})`);
-        }
-        return user || null;
-    }
-
-    function getUsersByIsep(idIsep) {
-        if (!usersByIsep.size && cachedUsers) {
-            buildIndexes();
-        }
-        
-        const users = usersByIsep.get(String(idIsep)) || [];
-        console.log(`👥 ${users.length} usuários encontrados para ISEP ${idIsep}`);
-        return users;
-    }
-
-    function getUserByMatriculaAndIsep(matricula, idIsep) {
-        const user = getUserByMatricula(matricula);
-        
-        if (user && user.idIsep === String(idIsep)) {
-            return user;
-        }
-        
-        return null;
-    }
-
-    // ========================================
-    // FORMATAÇÃO DE SAÍDA
-    // ========================================
     function formatUserName(user) {
         if (!user) return 'Usuário Desconhecido';
-        
         const nome = user.nome || 'Sem nome';
-        const cargoRaw = user.cargo || '';
-        const cargo = cargoRaw ? ` (${toTitleCaseCargo(cargoRaw)})` : '';
-        
+        const cargo = user.cargo ? ` (${toTitleCaseCargo(user.cargo)})` : '';
         return `${nome}${cargo}`;
     }
 
     function formatUserInfo(user) {
         if (!user) return 'Informações não disponíveis';
-        
         const info = [];
-        
         if (user.nome) info.push(`Nome: ${user.nome}`);
         if (user.cargo) info.push(`Cargo: ${toTitleCaseCargo(user.cargo)}`);
         if (user.setor) info.push(`Setor: ${user.setor}`);
@@ -207,7 +238,6 @@
         if (user.telefone2) info.push(`Tel2: ${user.telefone2}`);
         if (user.ramal) info.push(`Ramal: ${user.ramal}`);
         if (user.unidade) info.push(`Unidade: ${user.unidade}`);
-        
         return info.join('\n');
     }
 
@@ -215,7 +245,7 @@
     // UTILIDADES
     // ========================================
     function hasUsersData() {
-        return cachedUsers && cachedUsers.length > 0;
+        return !!(cachedUsers && cachedUsers.length > 0);
     }
 
     function clearUsersCache() {
@@ -225,20 +255,12 @@
         usersByIsep.clear();
         localStorage.removeItem(CACHE_KEY);
         localStorage.removeItem(CACHE_TS_KEY);
-        console.log('🗑️ Cache de usuários limpo (memória + localStorage)');
+        console.log('🗑️ Cache limpo');
     }
 
     function getUsersStats() {
-        if (!cachedUsers) {
-            return {
-                total: 0,
-                porIsep: 0,
-                lastUpdate: null
-            };
-        }
-        
         return {
-            total: cachedUsers.length,
+            total: cachedUsers?.length || 0,
             porIsep: usersByIsep.size,
             lastUpdate: cacheTimestamp ? new Date(cacheTimestamp).toLocaleString('pt-BR') : null
         };
