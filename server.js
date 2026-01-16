@@ -673,8 +673,8 @@ async function saveEventFromTcp(op) {
   if (isArmDisarm) {
     // Define prefix based on event type
     const baseDesc = cod.startsWith('3')
-      ? 'Armado - '
-      : 'Desarmado - ';
+      ? '[ Armado ] '
+      : '[ Desarmado ] ';
     // Known type (fixed mapping)
     if (tipos[zonaUsuario]) {
       descricao = `${baseDesc}${tipos[zonaUsuario]}`;
