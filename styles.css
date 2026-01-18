@@ -143,7 +143,7 @@
     .modal-content p { margin-bottom:12px; color:var(--text-secondary); font-size:13px; }
 
 /* MODAL AVANÇADO */
-    .modal-content.modal-close-event { max-width:720px; width:92%; max-height:90vh; display:flex; flex-direction:column; gap:12px; overflow:hidden; }
+    .modal-content.modal-close-event { max-width:720px; width:92%; max-height:95vh; display:flex; flex-direction:column; gap:12px; overflow:hidden; }
     .modal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); padding-bottom:8px; }
     .eyebrow { text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--text-secondary); margin-bottom:4px; }
     .badge-group { display:flex; gap:8px; align-items:center; }
