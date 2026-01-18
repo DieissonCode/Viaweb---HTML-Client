@@ -267,7 +267,7 @@ app.post('/api/logs/event', async (req, res) => {
       error: 'Falha ao salvar evento'
     });
   }
-});
+});               
 
 // ==============================
 // Logs API — closure + WebSocket broadcast
@@ -276,14 +276,19 @@ app.post('/api/logs/close', async (req, res) => {
   const codigo = event?.codigoEvento || event?.codigo || event?.code;
   const isep = event?.isep || event?.local || event?.clientId;
   const tipo = closure?.type;
+  
   if (!closure || !tipo || !codigo || !isep) {
     return res.status(400).json({
       success: false,
       error: 'Dados obrigatórios ausentes'
     });
   }
+  
   try {
-    await logsRepo.saveEventAndClosure(event, closure);
+    // ✅ Chama saveEventAndClosure com retry automático
+    const result = await logsRepo.saveEventAndClosure(event, closure);
+    
+    // ✅ Notifica via WebSocket apenas após sucesso
     const closureNotification = JSON.stringify({
       type: 'closure',
       isep,
@@ -292,19 +297,32 @@ app.post('/api/logs/close', async (req, res) => {
       timestamp: Date.now(),
       closedBy: closure?.user?.username
     });
+    
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(closureNotification);
       }
     });
-    logger.info(`📢 Encerramento notificado: ${isep}-${codigo}`);
-    return res.json({ success: true });
+    
+    logger.info(`📢 Encerramento salvo e notificado: ${isep}-${codigo}`);
+    return res.json({ 
+      success: true,
+      eventId: result.eventId,
+      closureId: result.closureId
+    });
+    
   } catch (e) {
     logger.error('❌ API /api/logs/close: ' + e.message);
     metrics.recordError();
+    
+    // ✅ Mensagem específica para o usuário
+    const userMessage = e.message.includes('deadlock') 
+      ? 'Conflito temporário ao salvar. Por favor, tente novamente.'
+      : 'Falha ao salvar encerramento';
+    
     return res.status(500).json({
       success: false,
-      error: 'Falha ao salvar encerramento'
+      error: userMessage
     });
   }
 });

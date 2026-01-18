@@ -237,12 +237,17 @@ class LogsRepository {
     }
 
     /* ---------- Save event + closure in a transaction ---------- */
-    async saveEventAndClosure(event, closure) {
+    async saveEventAndClosure(event, closure, retryCount = 0) {
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY_BASE = 100; // ms
+        
         const pool = await this.getPool();
         const tx = new mssql.Transaction(pool);
-        await tx.begin();
-
+        
         try {
+            // ✅ Configuração de isolamento para reduzir deadlocks
+            await tx.begin(mssql.ISOLATION_LEVEL.READ_COMMITTED);
+            
             const codigo       = normalizeText(event?.codigoEvento || event?.codigo || event?.code);
             const complemento  = normalizeComplemento(event?.complemento);
             const particao     = normalizeText(event?.particao);
@@ -273,7 +278,7 @@ class LogsRepository {
                 type, procedureText, userName, descricao, dataEventoStr
             });
 
-            // Try to reuse an existing event
+            // ✅ Tenta reusar evento existente FORA da transação para reduzir lock
             let eventId = await this.findEventId({ ...event, complemento });
 
             if (!eventId) {
@@ -313,6 +318,7 @@ class LogsRepository {
                 logDebug('saveEventAndClosure - reused eventId', { eventId });
             }
 
+            // ✅ Insert closure
             const sqlClosure = `
                 INSERT INTO LOGS.Closures (EventId, ISEP, Codigo, Complemento, Particao, Descricao, DataEvento, Tipo, Procedimento, ClosedBy, ClosedByDisplay)
                 OUTPUT INSERTED.Id
@@ -350,19 +356,19 @@ class LogsRepository {
             const closureId = clResult.recordset[0].Id;
             logDebug('saveEventAndClosure - closure inserted', { closureId });
 
-            // Link closure to event
+            // ✅ Link closure to event - ordem específica para evitar deadlock
             await new mssql.Request(tx)
                 .input('EventId', mssql.Int, eventId)
                 .input('ClosureId', mssql.Int, closureId)
-                .query(`UPDATE LOGS.Events SET ClosureId = @ClosureId WHERE Id = @EventId;`);
+                .query(`UPDATE LOGS.Events WITH (ROWLOCK) SET ClosureId = @ClosureId WHERE Id = @EventId;`);
 
-            // Additional safety update (in case of race conditions)
+            // ✅ Safety update com hint de lock
             await new mssql.Request(tx)
                 .input('ClosureId', mssql.Int, closureId)
                 .input('ISEP', mssql.NVarChar(10), isep)
                 .input('DataEventoStr', mssql.NVarChar(30), dataEventoStr)
                 .query(`
-                    UPDATE LOGS.Events
+                    UPDATE LOGS.Events WITH (ROWLOCK)
                     SET ClosureId = @ClosureId
                     WHERE ClosureId IS NULL
                     AND ISEP = @ISEP
@@ -372,9 +378,36 @@ class LogsRepository {
             await tx.commit();
             logDebug('saveEventAndClosure - committed', { eventId, closureId });
             return { eventId, closureId };
+            
         } catch (err) {
-            await tx.rollback();
-            logDebug('saveEventAndClosure - rolled back', { error: err.message });
+            await tx.rollback().catch(() => {});
+            
+            // ✅ Detecta deadlock e aplica retry com backoff exponencial
+            const isDeadlock = err.message && (
+                err.message.includes('deadlock') || 
+                err.message.includes('was deadlocked') ||
+                err.number === 1205 // SQL Server deadlock error number
+            );
+            
+            if (isDeadlock && retryCount < MAX_RETRIES) {
+                const delay = RETRY_DELAY_BASE * Math.pow(2, retryCount) + Math.random() * 50;
+                logDebug('saveEventAndClosure - deadlock detected, retrying', { 
+                    attempt: retryCount + 1, 
+                    delay: Math.round(delay) 
+                });
+                
+                // Aguarda antes de tentar novamente
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                // Tenta novamente recursivamente
+                return this.saveEventAndClosure(event, closure, retryCount + 1);
+            }
+            
+            logDebug('saveEventAndClosure - rolled back', { 
+                error: err.message,
+                retryCount,
+                isDeadlock 
+            });
             throw err;
         }
     }

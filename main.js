@@ -1230,8 +1230,7 @@ async function updateEventList() {
     else if (currentTab === 'historico') {
         if (!window.closuresData) await loadClosures();
         sourceEvents = groupClosuresByIsepAndId(window.closuresData || []);
-    }
-    else if (currentTab === 'status') {
+    } else if (currentTab === 'status') {
         const showArmed = document.getElementById('toggle-armed')?.checked ?? true;
         const showDisarmed = document.getElementById('toggle-disarmed')?.checked ?? true;
         
@@ -1247,7 +1246,8 @@ async function updateEventList() {
                 disarmed: cached?.disarmed || false,
                 allArmed: cached?.allArmed || false,
                 allDisarmed: cached?.allDisarmed || false,
-                partialArmed: cached?.partialArmed || false
+                partialArmed: cached?.partialArmed || false,
+                partialDetails: cached?.partialDetails || ''
             };
         });
         
@@ -1261,22 +1261,17 @@ async function updateEventList() {
                 if (u.status === 'offline') return true;
                 
                 // Se desconhecido, sempre mostra
-                if (!u.armed && !u.disarmed) return true;
+                if (!u.armed && !u.disarmed && !u.partialArmed) return true;
                 
                 // Filtra por estado
-                if (u.allArmed || u.partialArmed) {
-                    return showArmed;
-                }
-                
-                if (u.allDisarmed) {
-                    return showDisarmed;
-                }
+                if (u.allArmed) return showArmed;
+                if (u.allDisarmed) return showDisarmed;
+                if (u.partialArmed) return showArmed; // Parcial conta como armado
                 
                 return true;
             })
             .map(u => ({ statusUnit: u, type: 'status' }));
-    }
-    else if (currentTab === 'offline') {
+    } else if (currentTab === 'offline') {
         const offlineUnits = Array.from(statusCache.entries())
             .filter(([isep, info]) => info.status === 'offline')
             .map(([isep, info]) => ({ isep, ...info }));
@@ -1423,32 +1418,39 @@ async function updateEventList() {
                 tr.classList.add('status-partial-armed');
             }
             
-            const sinceDate = u.since ? new Date(u.since).toLocaleString('pt-BR') : '-';
+            const sinceDate = u.since ? new Date(u.since) : null;
+            const dataStatus = sinceDate ? sinceDate.toLocaleDateString('pt-BR') : '-';
+            const horaStatus = sinceDate ? sinceDate.toLocaleTimeString('pt-BR') : '-';
             
             let statusText = '';
-            let armStatus = '';
+            let descricao = '';
             
             if (u.status === 'offline') {
                 statusText = '🔴 Offline';
-                armStatus = '-';
+                descricao = '-';
             } else if (u.status === 'online') {
                 statusText = '🟢 Online';
                 
-                if (u.allArmed) armStatus = '🛡️ Todas Armadas';
-                else if (u.allDisarmed) armStatus = '🔓 Todas Desarmadas';
-                else if (u.partialArmed) armStatus = '⚠️ Parcialmente Armada';
-                else armStatus = '❓ Desconhecido';
+                if (u.allArmed) {
+                    descricao = '🛡️ Central Armada';
+                } else if (u.allDisarmed) {
+                    descricao = '🔓 Central Desarmada';
+                } else if (u.partialArmed) {
+                    descricao = `⚠️ Parcialmente Armada [ ${u.partialDetails || 'Detalhes indisponíveis'} ]`;
+                } else {
+                    descricao = '❓ Status Desconhecido';
+                }
             } else {
                 statusText = '⚪ Desconhecido';
-                armStatus = '-';
+                descricao = '-';
             }
             
             tr.innerHTML = `
                 <td>${getUnitDescription(u.isep)}</td>
-                <td colspan="2">${statusText}</td>
-                <td>${armStatus}</td>
-                <td>${sinceDate}</td>
-                <td>-</td>
+                <td>${dataStatus}</td>
+                <td>${horaStatus}</td>
+                <td>${statusText}</td>
+                <td>${descricao}</td>
             `;
             return;
         } else {
@@ -1720,16 +1722,41 @@ function handlePartitionStatusResponse(resp, isep) {
         return;
     }
     
-    const hasArmed = data.some(p => p.armado === 1);
-    const hasDisarmed = data.some(p => p.armado === 0);
+    // ✅ NOVA LÓGICA: ISEP terminado em 3 requer partições 3 E 4 armadas
+    const isepFinal = String(isep).slice(-1);
+    const requiresBothPartitions = isepFinal === '3';
+    
+    let isArmed = false;
+    let isPartial = false;
+    let partialDetails = '';
+    
+    if (requiresBothPartitions) {
+        const partition3 = data.find(p => p.pos === 3);
+        const partition4 = data.find(p => p.pos === 4);
+        
+        const p3Armed = partition3?.armado === 1;
+        const p4Armed = partition4?.armado === 1;
+        
+        if (p3Armed && p4Armed) {
+            isArmed = true;
+        } else if (p3Armed || p4Armed) {
+            isPartial = true;
+            if (!p3Armed) partialDetails = 'Partição 3 Desarmada';
+            if (!p4Armed) partialDetails = partialDetails ? `${partialDetails} e Partição 4 Desarmada` : 'Partição 4 Desarmada';
+        }
+    } else {
+        // Demais ISEP: qualquer partição armada = armado
+        isArmed = data.some(p => p.armado === 1);
+    }
     
     const cached = statusCache.get(isep);
     if (cached) {
-        cached.armed = hasArmed;
-        cached.disarmed = hasDisarmed;
-        cached.allArmed = hasArmed && !hasDisarmed;
-        cached.allDisarmed = !hasArmed && hasDisarmed;
-        cached.partialArmed = hasArmed && hasDisarmed;
+        cached.armed = isArmed;
+        cached.disarmed = !isArmed && !isPartial;
+        cached.allArmed = isArmed;
+        cached.allDisarmed = !isArmed && !isPartial;
+        cached.partialArmed = isPartial;
+        cached.partialDetails = partialDetails;
     }
     
     const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
