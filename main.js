@@ -81,30 +81,30 @@ let unitStatusSince = null;
 const statusCache = new Map();
 
 // Dedup de eventos no front (TTL 5min)
-const EVENT_DEDUPE_TTL = 5 * 60 * 1000;
-const eventDedupeCache = new Map();
-function pruneEventDedupeCache() {
-    const now = Date.now();
-    for (const [k, v] of eventDedupeCache.entries()) {
-        if (!v || !v.ts || now - v.ts > EVENT_DEDUPE_TTL) eventDedupeCache.delete(k);
+    const EVENT_DEDUPE_TTL = 5 * 60 * 1000;
+    const eventDedupeCache = new Map();
+    function pruneEventDedupeCache() {
+        const now = Date.now();
+        for (const [k, v] of eventDedupeCache.entries()) {
+            if (!v || !v.ts || now - v.ts > EVENT_DEDUPE_TTL) eventDedupeCache.delete(k);
+        }
     }
-}
-function normalizeComplementoForDedupe(comp) {
-    if (comp === undefined || comp === null || comp === '') return '0';
-    const s = String(comp).trim();
-    if (s === '-') return '0';
-    return s;
-}
-function makeEventDedupeKey(cod, isep, comp, ts) {
-    return `${cod}|${isep}|${normalizeComplementoForDedupe(comp)}|${ts}`;
-}
+    function normalizeComplementoForDedupe(comp) {
+        if (comp === undefined || comp === null || comp === '') return '0';
+        const s = String(comp).trim();
+        if (s === '-') return '0';
+        return s;
+    }
+    function makeEventDedupeKey(cod, isep, comp, ts) {
+        return `${cod}|${isep}|${normalizeComplementoForDedupe(comp)}|${ts}`;
+    }
 
 // Bloqueio/desbloqueio de UI por autenticação (ou modo read‑only)
 function setAuthLock(locked) {
     const ctrls = [
         unitSelect, unitSearch, autoUpdateCheckbox,
         armButton, disarmButton, armAllButton, disarmAllButton,
-        togglePartitionsBtn, toggleZonesBtn, confirmCloseEvent, cancelCloseEvent
+        togglePartitionsBtn, toggleZonesBtn, confirmCloseEvent
     ];
     ctrls.forEach(el => {
         if (el) el.disabled = locked;
@@ -115,8 +115,7 @@ function setAuthLock(locked) {
         .forEach(cb => cb.disabled = locked);
 
     // Desabilita botões de abas
-    document.querySelectorAll('.tab-btn')
-        .forEach(btn => btn.disabled = locked);
+    // document.querySelectorAll('.tab-btn').forEach(btn => btn.disabled = locked);
 
 }
 
@@ -200,6 +199,141 @@ let unitSelectDebounce = null;
 const lockedEvents = new Map(); // eventKey -> { operador, lockedAt }
 let lockKeepAliveInterval = null;
 
+class ClosureViewModal {
+    constructor() {
+        this.modal = document.getElementById('closureViewModal');
+        this.closureId = null;
+        this.closureData = null;
+    }
+
+    async open(closure) {
+        this.closureId = closure.Id;
+        this.closureData = closure;
+        
+        const events = await this.getAssociatedEvents(closure);
+        
+        document.getElementById('closureViewTitle').textContent = 
+            `Encerramento #${closure.Id} - ${closure.Tipo}`;
+        
+        document.getElementById('closureViewISEP').textContent = closure.ISEP;
+        document.getElementById('closureViewDate').textContent = 
+            new Date(closure.DataEvento).toLocaleString('pt-BR');
+        document.getElementById('closureViewBy').textContent = 
+            closure.ClosedByDisplay || closure.ClosedBy;
+        document.getElementById('closureViewProcedure').value = closure.Procedimento;
+        
+        const tbody = document.getElementById('closureViewEvents');
+        tbody.innerHTML = '';
+        events.forEach(ev => {
+            const tr = document.createElement('tr');
+            const partName = getPartitionName(ev.particao, ev.clientId);
+            tr.innerHTML = `
+                <td>${ev.data}</td>
+                <td>${ev.hora}</td>
+                <td>${ev.descricao}</td>
+                <td>${partName}</td>
+                <td>${ev.codigoEvento}</td>
+                <td>${ev.complemento || '-'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        const canEdit = this.canEdit(closure);
+        document.getElementById('editClosureBtn').style.display = canEdit ? 'inline-block' : 'none';
+        document.getElementById('closureViewProcedure').disabled = !canEdit;
+        
+        this.modal.style.display = 'block';
+    }
+
+    canEdit(closure) {
+        if (!currentUser) return false;
+        
+        const closedBy = closure.ClosedBy || '';
+        const myUsername = currentUser.username || currentUser.displayName;
+        
+        if (!closedBy.includes(myUsername)) return false;
+        
+        const closedAt = new Date(closure.DataHora);
+        const now = new Date();
+        const hoursDiff = (now - closedAt) / (1000 * 60 * 60);
+        
+        return hoursDiff <= 12;
+    }
+
+    async getAssociatedEvents(closure) {
+        let rawEvent = {};
+        try {
+            rawEvent = closure.RawEvent ? JSON.parse(closure.RawEvent) : {};
+        } catch (_) {}
+        
+        const local = closure.ISEP;
+        const codigo = closure.Codigo;
+        const complemento = closure.Complemento;
+        const startTs = new Date(closure.DataEvento).getTime();
+        
+        const baseCode = codigo.replace(/^[13]/, '');
+        const relatedCodes = [`1${baseCode}`, `3${baseCode}`];
+        
+        return allEvents.filter(ev => {
+            return (ev.local === local || ev.clientId === local) &&
+                   relatedCodes.includes(ev.codigoEvento) &&
+                   String(ev.complemento) === String(complemento) &&
+                   Number(ev.timestamp || 0) >= startTs;
+        }).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
+
+    async save() {
+        const newProcedure = document.getElementById('closureViewProcedure').value;
+        
+        try {
+            const resp = await fetch('/api/logs/closure/edit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    closureId: this.closureId,
+                    newProcedure,
+                    editedBy: currentUser?.displayName || 'Anônimo'
+                })
+            });
+            
+            const data = await resp.json();
+            
+            if (!data.success) {
+                alert('Erro: ' + data.error);
+                return;
+            }
+            
+            alert('Encerramento editado com sucesso');
+            this.close();
+            loadClosures();
+        } catch (err) {
+            alert('Erro ao salvar: ' + err.message);
+        }
+    }
+
+    close() {
+        this.modal.style.display = 'none';
+        this.closureId = null;
+        this.closureData = null;
+    }
+}
+
+const closureViewUI = new ClosureViewModal();
+
+async function loadClosures() {
+    try {
+        const resp = await fetch('/api/logs/closures?limit=100');
+        const data = await resp.json();
+        
+        if (!data.success) return;
+        
+        window.closuresData = data.data;
+        updateEventList();
+    } catch (err) {
+        console.error('Erro ao carregar encerramentos:', err);
+    }
+}
+
 class DebouncedSelector { // Controller OO para debounce de seleção de unidade
     constructor(delayMs, onSelect) {
         this.delayMs = delayMs;
@@ -228,6 +362,39 @@ function getAssociatedEventsForAlarm(group) {
             (ev.local === local || ev.clientId === local) &&
             Number(ev.timestamp || 0) >= startTs
         )
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+        .filter(ev => {
+            const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+function getAssociatedEventsForPendente(group) {
+    if (!group || !group.first) return [];
+    
+    const local = group.first.local || group.first.clientId;
+    const codigo = group.first.codigoEvento;
+    const complemento = group.first.complemento;
+    const startTs = Number(group.first.timestamp) || 0;
+    
+    // ✅ Códigos relacionados (falha + restauro)
+    const baseCode = codigo.replace(/^[13]/, '');
+    const relatedCodes = [`1${baseCode}`, `3${baseCode}`];
+    
+    const seen = new Set();
+    return allEvents
+        .filter(ev => {
+            const evLocal = ev.local || ev.clientId;
+            const evComp = ev.complemento;
+            const evTs = Number(ev.timestamp || 0);
+            
+            return evLocal === local &&
+                   relatedCodes.includes(ev.codigoEvento) &&
+                   evComp === complemento &&
+                   evTs >= startTs;
+        })
         .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
         .filter(ev => {
             const key = `${ev.timestamp}-${ev.codigoEvento}-${ev.complemento}`;
@@ -353,26 +520,65 @@ class CloseEventModal {
     render(group, type) {
         if (!this.container || !this.tbody) return;
 
-        if (type !== 'alarm') {
+        if (type !== 'alarm' && type !== 'pendente') {
             this.container.style.display = 'none';
             this.tbody.innerHTML = '';
             if (this.titleEl) this.titleEl.textContent = 'Encerrar Evento';
             if (this.badgeEl) this.badgeEl.textContent = '0 eventos';
             return;
         }
-
         this.container.style.display = 'block';
-        if (this.titleEl) this.titleEl.textContent = 'Encerrar Disparo';
+        if (this.titleEl) this.titleEl.textContent = type === 'alarm' ? 'Encerrar Disparo' : 'Encerrar Evento';
 
-        const events = getAssociatedEventsForAlarm(group);
+        const events = type === 'alarm' 
+            ? getAssociatedEventsForAlarm(group) 
+            : getAssociatedEventsForPendente(group); // ✅ NOVA função
+            
         if (this.badgeEl) this.badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
 
+        if (item.closure) {
+            const c = item.closure;
+            const tr = eventList.insertRow();
+            tr.className = 'event-row';
+            tr.style.cursor = 'pointer';
+            
+            const date = new Date(c.DataEvento);
+            tr.innerHTML = `
+                <td>${c.ISEP}</td>
+                <td>${date.toLocaleDateString('pt-BR')}</td>
+                <td>${date.toLocaleTimeString('pt-BR')}</td>
+                <td>${c.Complemento || '-'}</td>
+                <td>${getPartitionName(c.Particao, c.ISEP)}</td>
+                <td>${c.Descricao} (${c.Tipo}) - por ${c.ClosedByDisplay || c.ClosedBy}</td>
+            `;
+            
+            tr.onclick = () => closureViewUI.open(c);
+        }
+        if (item.offline) {
+            const u = item.offline;
+            const tr = eventList.insertRow();
+            tr.className = 'event-row offline';
+            
+            const unit = units.find(un => String(un.value) === String(u.isep));
+            const sinceDate = new Date(u.since);
+            
+            tr.innerHTML = `
+                <td>${u.isep}</td>
+                <td>${sinceDate.toLocaleDateString('pt-BR')}</td>
+                <td>${sinceDate.toLocaleTimeString('pt-BR')}</td>
+                <td>-</td>
+                <td>-</td>
+                <td>${unit ? unit.local : 'Desconhecido'} - Offline desde ${sinceDate.toLocaleString('pt-BR')}</td>
+            `;
+        }
+        document.getElementById('offline-count').textContent = 
+        Array.from(statusCache.values()).filter(s => s.status === 'offline').length;
         this.tbody.innerHTML = '';
         if (events.length === 0) {
             const tr = document.createElement('tr');
             const td = document.createElement('td');
             td.colSpan = 7;
-            td.textContent = 'Nenhum evento encontrado para este disparo.';
+            td.textContent = 'Nenhum evento encontrado.';
             tr.appendChild(td);
             this.tbody.appendChild(tr);
             return;
@@ -772,6 +978,14 @@ function populateUnitSelect() {
         const opt = document.createElement('option');
         opt.value = u.value;
         opt.textContent = `${u.local} (${u.value})`;
+        
+        // ✅ NOVO: aplica cor baseada em status
+        const cached = statusCache.get(String(u.value).toUpperCase());
+        if (cached) {
+            opt.style.color = cached.status === 'online' ? '#10b981' : '#ef4444';
+            opt.style.fontWeight = '600';
+        }
+        
         unitSelect.appendChild(opt);
     });
 }
@@ -870,8 +1084,13 @@ function updateZones(data) {
 
 // ---------- Contadores ----------
 function updateCounts() {
-    if (alarmCount) alarmCount.textContent = activeAlarms.size; // Disparos distintos por ISEP
-    if (pendCount) pendCount.textContent = Array.from(activePendentes.values()).filter(g => !g.resolved).length;
+    if (alarmCount) alarmCount.textContent = activeAlarms.size;
+    
+    // ✅ CORRIGIDO: conta apenas não-resolvidos
+    if (pendCount) {
+        const unresolved = Array.from(activePendentes.values()).filter(g => !g.resolved);
+        pendCount.textContent = unresolved.length;
+    }
 }
 
 window.updateCounts = updateCounts;
@@ -897,7 +1116,7 @@ function filterEvents(term) {
 }
 
 // ---------- Render de lista ----------
-function updateEventList() {
+async function updateEventList() {  // ✅ ADICIONADO async
     const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
     const filterTerm = eventsFilter.value.toLowerCase();
     eventList.innerHTML = '';
@@ -908,7 +1127,19 @@ function updateEventList() {
     else if (currentTab === 'pendentes') activePendentes.forEach(group => { if (!group.resolved) sourceEvents.push({ group, type: 'pendente' }); });
     else if (currentTab === 'sistema') sourceEvents = allEvents.filter(ev => sistemaCodes.includes(ev.codigoEvento));
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
-    else if (currentTab === 'historico') sourceEvents = allEvents;
+    else if (currentTab === 'historico') {
+        if (!window.closuresData) {
+            await loadClosures();  // ✅ agora funciona
+        }
+        sourceEvents = (window.closuresData || []).map(c => ({ closure: c, type: 'closure' }));
+    }
+    else if (currentTab === 'offline') {
+        const offlineUnits = Array.from(statusCache.entries())
+            .filter(([isep, info]) => info.status === 'offline')
+            .map(([isep, info]) => ({ isep, ...info }));
+        
+        sourceEvents = offlineUnits.map(u => ({ offline: u, type: 'offline' }));
+    }
 
     let filtered = sourceEvents.slice(-300);
     if (filterTerm) {
@@ -1243,6 +1474,7 @@ function handleListarClientesAllResponse(resp) {
     const viawebArr = resp?.viaweb;
     if (!viawebArr || !Array.isArray(viawebArr)) return;
     applyStatusFromViaweb(viawebArr);
+    populateUnitSelect();
 }
 
 function handleListarClientesResponse(resp, isepFormatted) {

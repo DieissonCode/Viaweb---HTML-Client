@@ -1,20 +1,22 @@
 ﻿class HotReload {
     constructor(checkInterval = 2000) {
-        this.checkInterval = checkInterval;
-        this.lastModified = null;
-        this.isReloading = false;
-        this.jsFiles = ['main.js', 'config.js', 'crypto.js', 'units-db.js', 'users-db.js']; // ✅ NOVO
-        this.jsLastMod = new Map(); // ✅ NOVO
-        
-        this.savedState = {
-            currentClientId: null,
-            selectedEvent: null,
-            selectedUnit: null,
-            autoUpdate: false,
-            currentUser: null
-        };
-        
-        this.init();
+    this.checkInterval = checkInterval;
+    this.lastModified = null;
+    this.isReloading = false;
+    this.jsFiles = ['main.js', 'config.js', 'crypto.js', 'units-db.js', 'users-db.js'];
+    this.cssFiles = ['styles.css']; // ✅ NOVO
+    this.jsLastMod = new Map();
+    this.cssLastMod = new Map(); // ✅ NOVO
+    
+    this.savedState = {
+        currentClientId: null,
+        selectedEvent: null,
+        selectedUnit: null,
+        autoUpdate: false,
+        currentUser: null
+    };
+    
+    this.init();
     }
 
     init() {
@@ -26,7 +28,6 @@
 
     async checkForUpdates() {
         try {
-            // ✅ NOVO: verifica HTML
             const response = await fetch(window.location.href, {
                 method: 'HEAD',
                 cache: 'no-cache'
@@ -43,7 +44,6 @@
                 return;
             }
             
-            // ✅ NOVO: verifica arquivos JS
             for (const file of this.jsFiles) {
                 const jsResp = await fetch(`/${file}`, {
                     method: 'HEAD',
@@ -57,6 +57,25 @@
                 } else if (this.jsLastMod.get(file) !== jsLastMod) {
                     console.log(`🔄 Mudança detectada em ${file}`);
                     this.jsLastMod.set(file, jsLastMod);
+                    await this.reload();
+                    return;
+                }
+            }
+            
+            // ✅ NOVO: verifica CSS
+            for (const file of this.cssFiles) {
+                const cssResp = await fetch(`/${file}`, {
+                    method: 'HEAD',
+                    cache: 'no-cache'
+                });
+                
+                const cssLastMod = cssResp.headers.get('Last-Modified');
+                
+                if (!this.cssLastMod.has(file)) {
+                    this.cssLastMod.set(file, cssLastMod);
+                } else if (this.cssLastMod.get(file) !== cssLastMod) {
+                    console.log(`🔄 Mudança detectada em ${file}`);
+                    this.cssLastMod.set(file, cssLastMod);
                     await this.reload();
                     return;
                 }

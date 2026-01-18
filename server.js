@@ -515,6 +515,91 @@ app.get('/api/metrics', (req, res) => {
 });
 
 // ==============================
+// Logs API — recent closures + edit endpoint
+app.get('/api/logs/closures', async (req, res) => {
+  const limit = Number(req.query.limit) || 100;
+  try {
+    const pool = await connectLogsDatabase();
+    const result = await pool.request()
+      .input('Limit', mssql.Int, limit)
+      .query(`
+        SELECT TOP (@Limit)
+          c.Id, c.EventId, c.ISEP, c.Codigo, c.Complemento, c.Particao,
+          c.Descricao, c.DataEvento, c.Tipo, c.Procedimento,
+          c.ClosedBy, c.ClosedByDisplay, c.DataHora,
+          e.RawEvent
+        FROM LOGS.Closures c
+        LEFT JOIN LOGS.Events e ON c.EventId = e.Id
+        ORDER BY c.DataHora DESC
+      `);
+    
+    return res.json({
+      success: true,
+      data: result.recordset
+    });
+  } catch (err) {
+    logger.error('❌ API /api/logs/closures: ' + err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Falha ao buscar encerramentos'
+    });
+  }
+});
+
+// ==============================
+// Edit closure procedure endpoint
+app.post('/api/logs/closure/edit', async (req, res) => {
+  const { closureId, newProcedure, editedBy } = req.body || {};
+  
+  if (!closureId || !newProcedure || !editedBy) {
+    return res.status(400).json({
+      success: false,
+      error: 'Dados obrigatórios ausentes'
+    });
+  }
+  
+  try {
+    const pool = await connectLogsDatabase();
+    
+    // Busca procedimento antigo
+    const existing = await pool.request()
+      .input('Id', mssql.Int, closureId)
+      .query('SELECT Procedimento, ClosedBy, DataHora FROM LOGS.Closures WHERE Id = @Id');
+    
+    if (existing.recordset.length === 0) {
+      return res.status(404).json({ success: false, error: 'Encerramento não encontrado' });
+    }
+    
+    const old = existing.recordset[0];
+    const closedAt = new Date(old.DataHora);
+    const now = new Date();
+    const hoursDiff = (now - closedAt) / (1000 * 60 * 60);
+    
+    if (hoursDiff > 12) {
+      return res.status(403).json({
+        success: false,
+        error: 'Prazo de 12 horas expirado'
+      });
+    }
+    
+    const editLog = `\n\n[EDITADO em ${now.toLocaleString('pt-BR')} por ${editedBy}]\nAnterior: ${old.Procedimento}`;
+    
+    await pool.request()
+      .input('Id', mssql.Int, closureId)
+      .input('NewProc', mssql.NVarChar(mssql.MAX), newProcedure + editLog)
+      .query('UPDATE LOGS.Closures SET Procedimento = @NewProc WHERE Id = @Id');
+    
+    return res.json({ success: true });
+  } catch (err) {
+    logger.error('❌ API /api/logs/closure/edit: ' + err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Falha ao editar encerramento'
+    });
+  }
+});
+
+// ==============================
 // Static file hosting (frontend assets)
 app.use(express.static(__dirname));
 

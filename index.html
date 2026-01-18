@@ -209,10 +209,11 @@
 </head>
 <body>
     <h1 id="status" class="disconnected">
-        <span id="status-text">Viaweb - Cotrijal</span>
-        <span id="status-icon"></span>
-        <!-- Login Button -->
-        <button id="login-btn" type="button" style="margin-left:auto;">🔑 Login</button>
+        <div class="status-container">
+            <span id="status-text">Viaweb - Cotrijal</span>
+            <span id="status-icon"></span>
+        </div>
+        <button id="login-btn" type="button">🔑 Login</button>
         <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Alternar tema">🌙</button>
     </h1>
     <div id="auth-status-bar">
@@ -285,8 +286,9 @@
                         <button class="tab-btn" data-tab="alarms">Disparos (<span id="alarm-count">0</span>)</button>
                         <button class="tab-btn" data-tab="pendentes">Pendentes (<span id="pend-count">0</span>)</button>
                         <button class="tab-btn" data-tab="sistema">Sistema</button>
-                        <button class="tab-btn" data-tab="usuarios">Usuários</button>
-                        <button class="tab-btn" data-tab="historico">Histórico</button>
+                        <button class="tab-btn" data-tab="usuarios">Arme e Desarme</button>
+                        <button class="tab-btn" data-tab="historico">Finalizados</button>
+                        <button class="tab-btn" data-tab="offline">Offline (<span id="offline-count">0</span>)</button>
                     </div>
                     <table id="events-table">
                         <thead>
@@ -294,7 +296,7 @@
                                 <th>ISEP</th>
                                 <th>Data</th>
                                 <th>Hora</th>
-                                <th>Complemento</th>
+                                <th>Zona/Usr</th>
                                 <th>Partição</th>
                                 <th>Descrição</th>
                             </tr>
@@ -352,13 +354,61 @@
         </div>
         </div>
     </div>
+    <div id="closureViewModal" class="modal">
+        <div class="modal-content modal-close-event">
+            <header class="modal-header">
+                <div>
+                    <p class="eyebrow">Visualização</p>
+                    <h2 id="closureViewTitle">Encerramento</h2>
+                </div>
+            </header>
 
+            <section class="modal-section">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div><strong>ISEP:</strong> <span id="closureViewISEP"></span></div>
+                    <div><strong>Data:</strong> <span id="closureViewDate"></span></div>
+                    <div><strong>Finalizado por:</strong> <span id="closureViewBy"></span></div>
+                </div>
+            </section>
+
+            <section class="modal-section">
+                <h3>Eventos Relacionados</h3>
+                <div class="history-table-wrapper">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Hora</th>
+                                <th>Descrição</th>
+                                <th>Partição</th>
+                                <th>Código</th>
+                                <th>Zona/Usr</th>
+                            </tr>
+                        </thead>
+                        <tbody id="closureViewEvents"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="modal-section">
+                <label for="closureViewProcedure">Procedimento:</label>
+                <textarea id="closureViewProcedure" disabled></textarea>
+            </section>
+
+            <footer class="modal-footer">
+                <button id="editClosureBtn" style="display:none">✏️ Salvar Edição</button>
+                <button id="closeClosureViewBtn" class="ghost">Fechar</button>
+            </footer>
+        </div>
+    </div>
     <!-- Load dependencies in order (no ESM modules) -->
     <script src="config.js"></script>
     <script src="crypto.js"></script>
     <script src="units-db.js"></script>
     <script src="users-db.js"></script>
     <script src="main.js"></script>
+    <script>document.getElementById('editClosureBtn').onclick = () => closureViewUI.save();</script>
+    <script>document.getElementById('closeClosureViewBtn').onclick = () => closureViewUI.close();</script>
     <script>
         // Panel collapse/expand functionality
         const panelsContainer = document.getElementById('panels-container');
