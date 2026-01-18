@@ -81,7 +81,8 @@
     .ok { background:rgba(16,185,129,.2); color:var(--success); }
     .aberto, .disparada { background:rgba(239,68,68,.2); color:var(--danger); }
     .tamper { background:rgba(245,158,11,.2); color:var(--warning); }
-
+    .excluido { background:rgba(0,0,0,.3); color:#6b7280; }
+    .inibido { background: rgba(236, 236, 93, 0.432); color: #000000 }
 /* TIPOGRAFIA MONO */
     .mono-number { font-family:'Courier New',monospace; font-weight:700; color:var(--primary-light); }
 
@@ -123,7 +124,7 @@
 
 /* LINHAS DE EVENTOS */
     .event-row { transition:.2s; }
-    /* .event-row:hover { background:var(--bg-hover); } */
+    .event-row:hover { background:var(--bg-hover); }
 
 /* TIPOS DE EVENTOS */
     .alarm { background:rgb(153, 33, 33); border-left:4px solid #ef4444; }
