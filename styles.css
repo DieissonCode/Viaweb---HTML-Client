@@ -216,3 +216,7 @@
 /* Destaque do status de autenticação */
     #auth-status-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; background: var(--bg-card); border-radius: 6px; padding: 8px 12px; box-shadow: 0 2px 4px var(--shadow); }
     #auth-user-label { font-size: 14px; font-weight: 700; color: var(--primary-light); background: var(--bg-dark); padding: 6px 12px; border-radius: 6px; border-left: 3px solid var(--success); }
+
+/* Badge de contagem de eventos nos finalizados */
+    .event-count-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-left: 8px; background: var(--primary); color: #fff;}
+    .event-count-badge.empty { background: var(--bg-dark); color: var(--text-secondary); border: 1px solid var(--border);}

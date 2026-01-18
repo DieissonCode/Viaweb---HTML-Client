@@ -204,39 +204,74 @@ class ClosureViewModal {
         this.modal = document.getElementById('closureViewModal');
         this.closureId = null;
         this.closureData = null;
+        this.associatedEvents = null;
     }
 
-    async open(closure) {
+    async open(closure, preloadedEvents = null) {
         this.closureId = closure.Id;
         this.closureData = closure;
         
-        const events = await this.getAssociatedEvents(closure);
+        // ✅ NOVO: Usa eventos pré-carregados se disponíveis
+        const events = preloadedEvents || await this.getAssociatedEvents(closure);
+        this.associatedEvents = events;
+        
+        const eventCount = events.length;
+        const eventText = eventCount === 1 ? 'evento' : 'eventos';
         
         document.getElementById('closureViewTitle').textContent = 
-            `Encerramento #${closure.Id} - ${closure.Tipo}`;
+            `Encerramento #${closure.Id} - ${closure.Tipo} (${eventCount} ${eventText})`;
         
         document.getElementById('closureViewISEP').textContent = closure.ISEP;
         document.getElementById('closureViewDate').textContent = 
             new Date(closure.DataEvento).toLocaleString('pt-BR');
         document.getElementById('closureViewBy').textContent = 
             closure.ClosedByDisplay || closure.ClosedBy;
-        document.getElementById('closureViewProcedure').value = closure.Procedimento;
+        document.getElementById('closureViewProcedure').value = closure.Procedimento || '';
         
         const tbody = document.getElementById('closureViewEvents');
         tbody.innerHTML = '';
-        events.forEach(ev => {
+        
+        if (events.length === 0) {
             const tr = document.createElement('tr');
-            const partName = getPartitionName(ev.particao, ev.clientId);
-            tr.innerHTML = `
-                <td>${ev.data}</td>
-                <td>${ev.hora}</td>
-                <td>${ev.descricao}</td>
-                <td>${partName}</td>
-                <td>${ev.codigoEvento}</td>
-                <td>${ev.complemento || '-'}</td>
+            const td = document.createElement('td');
+            td.colSpan = 6;
+            td.innerHTML = `
+                <div style="padding: 40px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">📋</div>
+                    <div style="color: var(--text-secondary); font-size: 14px;">
+                        Nenhum evento associado encontrado
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 12px; margin-top: 8px; opacity: 0.7;">
+                        Os eventos podem ter sido removidos ou este encerramento foi criado sem eventos vinculados
+                    </div>
+                </div>
             `;
+            tr.appendChild(td);
             tbody.appendChild(tr);
-        });
+        } else {
+            // ✅ Ordena eventos por timestamp (cronológico)
+            const sortedEvents = [...events].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            
+            sortedEvents.forEach((ev, index) => {
+                const tr = document.createElement('tr');
+                const partName = getPartitionName(ev.particao, ev.clientId);
+                const complemento = (ev.complemento !== undefined && ev.complemento !== null && ev.complemento !== '') ? ev.complemento : '-';
+                
+                // Destaca primeiro e último evento
+                if (index === 0) tr.style.background = 'rgba(59, 130, 246, 0.1)';
+                if (index === sortedEvents.length - 1) tr.style.background = 'rgba(16, 185, 129, 0.1)';
+                
+                tr.innerHTML = `
+                    <td>${ev.data}</td>
+                    <td>${ev.hora}</td>
+                    <td>${ev.descricao}</td>
+                    <td>${partName}</td>
+                    <td>${ev.codigoEvento}</td>
+                    <td>${complemento}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
         
         const canEdit = this.canEdit(closure);
         document.getElementById('editClosureBtn').style.display = canEdit ? 'inline-block' : 'none';
@@ -261,6 +296,10 @@ class ClosureViewModal {
     }
 
     async getAssociatedEvents(closure) {
+        if (this.associatedEvents) {
+            return this.associatedEvents;
+        }
+
         let rawEvent = {};
         try {
             rawEvent = closure.RawEvent ? JSON.parse(closure.RawEvent) : {};
@@ -268,7 +307,7 @@ class ClosureViewModal {
         
         const local = closure.ISEP;
         const codigo = closure.Codigo;
-        const complemento = closure.Complemento;
+        const complemento = String(closure.Complemento || 0);
         const startTs = new Date(closure.DataEvento).getTime();
         
         const baseCode = codigo.replace(/^[13]/, '');
@@ -276,14 +315,19 @@ class ClosureViewModal {
         
         return allEvents.filter(ev => {
             return (ev.local === local || ev.clientId === local) &&
-                   relatedCodes.includes(ev.codigoEvento) &&
-                   String(ev.complemento) === String(complemento) &&
-                   Number(ev.timestamp || 0) >= startTs;
+                relatedCodes.includes(ev.codigoEvento) &&
+                String(ev.complemento || 0) === complemento &&
+                Number(ev.timestamp || 0) >= startTs;
         }).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
     }
 
     async save() {
         const newProcedure = document.getElementById('closureViewProcedure').value;
+        
+        if (!newProcedure.trim()) {
+            alert('O procedimento não pode estar vazio');
+            return;
+        }
         
         try {
             const resp = await fetch('/api/logs/closure/edit', {
@@ -303,11 +347,11 @@ class ClosureViewModal {
                 return;
             }
             
-            alert('Encerramento editado com sucesso');
+            alert('✅ Encerramento editado com sucesso');
             this.close();
-            loadClosures();
+            await loadClosures(); // Recarrega lista
         } catch (err) {
-            alert('Erro ao salvar: ' + err.message);
+            alert('❌ Erro ao salvar: ' + err.message);
         }
     }
 
@@ -325,12 +369,22 @@ async function loadClosures() {
         const resp = await fetch('/api/logs/closures?limit=100');
         const data = await resp.json();
         
-        if (!data.success) return;
+        if (!data.success) {
+            console.warn('⚠️ Falha ao carregar encerramentos');
+            return;
+        }
         
+        console.log(`📋 ${data.data.length} encerramentos carregados`);
         window.closuresData = data.data;
-        updateEventList();
+        
+        // Atualiza lista se estiver na tab finalizados
+        const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+        if (currentTab === 'historico') {
+            updateEventList();
+        }
     } catch (err) {
-        console.error('Erro ao carregar encerramentos:', err);
+        console.error('❌ Erro ao carregar encerramentos:', err);
+        window.closuresData = [];
     }
 }
 
@@ -376,7 +430,7 @@ function getAssociatedEventsForPendente(group) {
     
     const local = group.first.local || group.first.clientId;
     const codigo = group.first.codigoEvento;
-    const complemento = group.first.complemento;
+    const complemento = String(group.first.complemento || 0);
     const startTs = Number(group.first.timestamp) || 0;
     
     // ✅ Códigos relacionados (falha + restauro)
@@ -387,7 +441,7 @@ function getAssociatedEventsForPendente(group) {
     return allEvents
         .filter(ev => {
             const evLocal = ev.local || ev.clientId;
-            const evComp = ev.complemento;
+            const evComp = String(ev.complemento || 0);
             const evTs = Number(ev.timestamp || 0);
             
             return evLocal === local &&
@@ -527,52 +581,17 @@ class CloseEventModal {
             if (this.badgeEl) this.badgeEl.textContent = '0 eventos';
             return;
         }
+
         this.container.style.display = 'block';
         if (this.titleEl) this.titleEl.textContent = type === 'alarm' ? 'Encerrar Disparo' : 'Encerrar Evento';
 
+        // ✅ CORRIGIDO - usa função correta para cada tipo
         const events = type === 'alarm' 
             ? getAssociatedEventsForAlarm(group) 
-            : getAssociatedEventsForPendente(group); // ✅ NOVA função
+            : getAssociatedEventsForPendente(group);
             
         if (this.badgeEl) this.badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
 
-        if (item.closure) {
-            const c = item.closure;
-            const tr = eventList.insertRow();
-            tr.className = 'event-row';
-            tr.style.cursor = 'pointer';
-            
-            const date = new Date(c.DataEvento);
-            tr.innerHTML = `
-                <td>${c.ISEP}</td>
-                <td>${date.toLocaleDateString('pt-BR')}</td>
-                <td>${date.toLocaleTimeString('pt-BR')}</td>
-                <td>${c.Complemento || '-'}</td>
-                <td>${getPartitionName(c.Particao, c.ISEP)}</td>
-                <td>${c.Descricao} (${c.Tipo}) - por ${c.ClosedByDisplay || c.ClosedBy}</td>
-            `;
-            
-            tr.onclick = () => closureViewUI.open(c);
-        }
-        if (item.offline) {
-            const u = item.offline;
-            const tr = eventList.insertRow();
-            tr.className = 'event-row offline';
-            
-            const unit = units.find(un => String(un.value) === String(u.isep));
-            const sinceDate = new Date(u.since);
-            
-            tr.innerHTML = `
-                <td>${u.isep}</td>
-                <td>${sinceDate.toLocaleDateString('pt-BR')}</td>
-                <td>${sinceDate.toLocaleTimeString('pt-BR')}</td>
-                <td>-</td>
-                <td>-</td>
-                <td>${unit ? unit.local : 'Desconhecido'} - Offline desde ${sinceDate.toLocaleString('pt-BR')}</td>
-            `;
-        }
-        document.getElementById('offline-count').textContent = 
-        Array.from(statusCache.values()).filter(s => s.status === 'offline').length;
         this.tbody.innerHTML = '';
         if (events.length === 0) {
             const tr = document.createElement('tr');
@@ -659,6 +678,7 @@ function ingestNormalizedEvent(ev) {
         }
     }
 
+    // ✅ DISPARO - mantém igual
     if (ev.codigoEvento === '1130') {
         const key = ev.local;
         if (!activeAlarms.has(key)) {
@@ -668,22 +688,29 @@ function ingestNormalizedEvent(ev) {
         }
     }
 
+    // ✅ PENDENTES - CORRIGIDO
     const isFalha = falhaCodes.includes(ev.codigoEvento);
     const isRestauro = ev.codigoEvento.startsWith('3') && sistemaCodes.includes(ev.codigoEvento);
 
     if (isFalha || isRestauro) {
-        const zona = (ev.complemento !== '-' && ev.complemento !== '' && ev.complemento !== null && ev.complemento !== undefined)
-            ? ev.complemento
-            : 0;
-        const key = `${ev.local}-${ev.codigoEvento}-${zona}`;
+        const zona = String(ev.complemento || 0);
+        const baseCode = ev.codigoEvento.replace(/^[13]/, '');
+        const falhaKey = `${ev.local}-1${baseCode}-${zona}`;
+
         if (isFalha) {
-            if (!activePendentes.has(key)) activePendentes.set(key, { first: ev, events: [], resolved: false });
-            activePendentes.get(key).events.push(ev);
+            // Cria ou atualiza pendente
+            if (!activePendentes.has(falhaKey)) {
+                activePendentes.set(falhaKey, { first: ev, events: [ev], resolved: false });
+            } else {
+                activePendentes.get(falhaKey).events.push(ev);
+            }
         }
+
         if (isRestauro) {
-            const falhaCod = ev.codigoEvento.replace(/^3/, '1');
-            const falhaKey = `${ev.local}-${falhaCod}-${zona}`;
-            if (activePendentes.has(falhaKey)) activePendentes.get(falhaKey).resolved = true;
+            // Marca como resolvido
+            if (activePendentes.has(falhaKey)) {
+                activePendentes.get(falhaKey).resolved = true;
+            }
         }
     }
 }
@@ -946,6 +973,15 @@ function isValidISEP(idISEP) {
     loadInitialHistory(300);
 })();
 
+(async () => {  // Carrega encerramentos
+    try {
+        await loadClosures();
+        console.log('✅ Encerramentos carregados');
+    } catch (err) {
+        console.error('❌ Erro ao carregar encerramentos:', err);
+    }
+})();
+
 const themeToggle = document.getElementById('theme-toggle');
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme === 'light') { document.body.classList.add('light-mode'); themeToggle.textContent = '🌙'; }
@@ -1114,9 +1150,41 @@ function filterEvents(term) {
         row.style.display = text.includes(lowerTerm) ? '' : 'none';
     });
 }
+// ✅ NOVO: Agrupa encerramentos por ISEP e ClosureId
+function groupClosuresByIsepAndId(closures) {
+    const grouped = new Map();
+    
+    closures.forEach(c => {
+        const key = `${c.ISEP}-${c.Id}`;
+        if (!grouped.has(key)) {
+            // Calcula eventos associados IMEDIATAMENTE
+            const codigo = c.Codigo;
+            const complemento = String(c.Complemento || 0);
+            const startTs = new Date(c.DataEvento).getTime();
+            const baseCode = codigo.replace(/^[13]/, '');
+            const relatedCodes = [`1${baseCode}`, `3${baseCode}`];
+            
+            const associatedEvents = allEvents.filter(ev => {
+                return (ev.local === c.ISEP || ev.clientId === c.ISEP) &&
+                    relatedCodes.includes(ev.codigoEvento) &&
+                    String(ev.complemento || 0) === complemento &&
+                    Number(ev.timestamp || 0) >= startTs;
+            }).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            
+            grouped.set(key, {
+                closure: c,
+                type: 'closure',
+                count: associatedEvents.length,
+                events: associatedEvents
+            });
+        }
+    });
+    
+    return Array.from(grouped.values());
+}
 
 // ---------- Render de lista ----------
-async function updateEventList() {  // ✅ ADICIONADO async
+async function updateEventList() {
     const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
     const filterTerm = eventsFilter.value.toLowerCase();
     eventList.innerHTML = '';
@@ -1129,9 +1197,9 @@ async function updateEventList() {  // ✅ ADICIONADO async
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
     else if (currentTab === 'historico') {
         if (!window.closuresData) {
-            await loadClosures();  // ✅ agora funciona
+            await loadClosures();
         }
-        sourceEvents = (window.closuresData || []).map(c => ({ closure: c, type: 'closure' }));
+        sourceEvents = groupClosuresByIsepAndId(window.closuresData || []);
     }
     else if (currentTab === 'offline') {
         const offlineUnits = Array.from(statusCache.entries())
@@ -1169,10 +1237,61 @@ async function updateEventList() {  // ✅ ADICIONADO async
     };
 
     displayEvents.forEach(item => {
+        // ✅ CORRIGIDO: contador baseado no tipo
         let ev, count = 1;
+        
         if (item.group) {
             ev = item.group.first;
-            count = getAssociatedEventsForAlarm(item.group).length;
+            
+            // ✅ Conta eventos específicos por tipo
+            if (item.type === 'alarm') {
+                count = getAssociatedEventsForAlarm(item.group).length;
+            } else if (item.type === 'pendente') {
+                count = getAssociatedEventsForPendente(item.group).length;
+            }
+        } else if (item.closure) {
+            const c = item.closure;
+            const count = item.count || 0;
+            const tr = eventList.insertRow();
+            tr.className = 'event-row';
+            tr.style.cursor = 'pointer';
+            
+            const date = new Date(c.DataEvento);
+            const countBadge = count > 0 
+                ? `<span class="event-count-badge">${count} evento${count === 1 ? '' : 's'}</span>` 
+                : '<span class="event-count-badge empty">sem eventos</span>';
+            
+            tr.innerHTML = `
+                <td>${c.ISEP}</td>
+                <td>${date.toLocaleDateString('pt-BR')}</td>
+                <td>${date.toLocaleTimeString('pt-BR')}</td>
+                <td>${c.Complemento || '-'}</td>
+                <td>${getPartitionName(c.Particao, c.ISEP)}</td>
+                <td>
+                    ${c.Descricao} (${c.Tipo}) - por ${c.ClosedByDisplay || c.ClosedBy}
+                    ${countBadge}
+                </td>
+            `;
+            
+            tr.onclick = () => closureViewUI.open(c, item.events || []);
+            return;
+         } else if (item.offline) {
+            const u = item.offline;
+            const tr = eventList.insertRow();
+            tr.className = 'event-row offline';
+            
+            const unit = units.find(un => String(un.value) === String(u.isep));
+            const sinceDate = new Date(u.since);
+            
+            tr.innerHTML = `
+                <td>${u.isep}</td>
+                <td>${sinceDate.toLocaleDateString('pt-BR')}</td>
+                <td>${sinceDate.toLocaleTimeString('pt-BR')}</td>
+                <td>-</td>
+                <td>-</td>
+                <td>${unit ? unit.local : 'Desconhecido'} - Offline desde ${sinceDate.toLocaleString('pt-BR')}</td>
+            `;
+            return;
         } else {
             ev = item;
         }
@@ -1199,7 +1318,6 @@ async function updateEventList() {  // ✅ ADICIONADO async
 
         const partName = getPartitionName(ev.particao, ev.clientId);
         const descBase = ev.descricao || ev.baseDescricao ||  '';
-        //console.log(`${ev.descricao} | ${descBase}`);
         let desc = descBase;
         if (count > 1) desc += ` (${count} eventos)`;
 
@@ -1229,7 +1347,6 @@ async function updateEventList() {  // ✅ ADICIONADO async
             const usersByIsep = window.UsersDB.getUsersByIsep(String(ev.local || ev.clientId)) || [];
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
         } else if (isArmDisarmCode && complemento !== '-' && complemento !== '' && complemento !== null && complemento !== undefined) {
-            // mantém descrição original e ainda tenta tooltip se for possível
             const zonaUsuario = Number(complemento);
             const usersByIsep = window.UsersDB.getUsersByIsep(String(ev.local || ev.clientId)) || [];
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
@@ -1262,10 +1379,13 @@ async function updateEventList() {  // ✅ ADICIONADO async
     if (filtered.length > maxDisplayEvents) {
         const infoRow = eventList.insertRow(0);
         infoRow.className = 'event-info';
-        infoRow.innerHTML = `<td>
+        infoRow.innerHTML = `<td colspan="6">
             Mostrando últimos ${maxDisplayEvents} de ${filtered.length} eventos. Use o filtro para refinar a busca.
         </td>`;
     }
+    
+    document.getElementById('offline-count').textContent = 
+        Array.from(statusCache.values()).filter(s => s.status === 'offline').length;
 }
 
 // ---------- Modal e tooltip ----------

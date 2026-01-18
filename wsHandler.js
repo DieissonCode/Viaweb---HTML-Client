@@ -191,32 +191,55 @@ function setupWebSocketServer(httpServer, options = {}) {
 
                 dbg('TCP JSON CLEAN:', jsonStr);
 
-                const parsed = JSON.parse(jsonStr);
-
-                if (parsed?.resp && !tcpReady) {
-                    tcpReady = true;
-                    logger.info('IDENT confirmed – TCP session READY');
-                }
-
-                if (parsed.oper && Array.isArray(parsed.oper)) {
-                    for (const op of parsed.oper) {
-                        if (op.acao === 'evento') {    if (cfg.onTcpEvent) await cfg.onTcpEvent(op);
-                        sendAck(op.id);
-                        if (!shouldForwardToClients(op)) continue;
+                // ✅ NOVO: Trata múltiplos JSONs separados por \u0001
+                const jsonParts = jsonStr.split('\u0001').filter(s => s.trim());
+                
+                for (const part of jsonParts) {
+                    try {
+                        const parsed = JSON.parse(part);
+                        
+                        if (parsed?.resp && !tcpReady) {
+                            tcpReady = true;
+                            logger.info('IDENT confirmed – TCP session READY');
                         }
+
+                        if (parsed.oper && Array.isArray(parsed.oper)) {
+                            for (const op of parsed.oper) {
+                                if (op.acao === 'evento') {
+                                    if (cfg.onTcpEvent) await cfg.onTcpEvent(op);
+                                    sendAck(op.id);
+                                    if (!shouldForwardToClients(op)) continue;
+                                }
+                            }
+                        }
+
+                        wss.clients.forEach(ws => {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(part);
+                            }
+                        });
+
+                        metrics.recordEvent();
+                        
+                    } catch (parseErr) {
+                        logger.warn('Failed to parse JSON part: ' + parseErr.message);
+                        dbg('FAILED JSON:', part);
                     }
                 }
 
-                wss.clients.forEach(ws => {
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(jsonStr);
-                    }
-                });
-
-                metrics.recordEvent();
             } catch (err) {
                 logger.error('TCP processing error: ' + err.message);
+                dbg('TCP ERROR CONTEXT:', {
+                    bufferLength: tcpRecvBuf.length,
+                    errorStack: err.stack
+                });
                 metrics.recordError();
+                
+                // ✅ Em caso de erro grave, limpa buffer para evitar loop
+                if (err.message.includes('JSON') || err.message.includes('decrypt')) {
+                    logger.warn('Clearing TCP buffer due to parse error');
+                    tcpRecvBuf = Buffer.alloc(0);
+                }
             }
         });
 
