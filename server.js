@@ -620,67 +620,54 @@ function toTitleCase(str) {
     .join(' ');
 }
 
-// ==============================
-// Processing events received via TCP
 async function saveEventFromTcp(op) {
-  // Event code received (defensive fallback)
   const cod = op.codigoEvento || 'N/A';
-  // Event ID (used for TCP ACK)
   const eventId = op.id;
-  // Special event: only acknowledge (ACK) and skip persistence
-  if (cod === '1412') {
-    sendAckToViaweb(eventId);
-    return { success: true, skipped: true };
+
+  if (cod === '1412') { 
+    sendAckToViaweb(eventId); 
+    return { success: true, skipped: true }; 
   }
-  // Complement may arrive in different fields depending on event type
+
   const rawComplement = (op.zonaUsuario !== undefined ? op.zonaUsuario : op.complemento);
   const hasComplemento = rawComplement !== undefined && rawComplement !== null;
-  // Normalize user zone to a valid integer
   let zonaUsuario = hasComplemento ? Number(rawComplement) : 0;
   if (Number.isNaN(zonaUsuario)) zonaUsuario = 0;
-  // Event partition (default = 1)
+
   const part = op.particao || 1;
-  // Installation identifier (ISEP)
   const local = op.isep || 'N/A';
-  // Client ID (fallback across possible fields)
   const clientId = op.isep || op.contaCliente || '';
-  // Event timestamp (normalize to milliseconds)
   let ts = op.recepcao || Date.now();
   if (ts < 10000000000) ts *= 1000;
-  // ==============================
-  // Arm / Disarm event codes
+
   const armDisarmCodes = [
     '1401','1402','1403','1404','1405','1406','1407','1408',
     '3401','3402','3403','3404','3405','3406','3407','3408'
   ];
-  // Known activation types
+
   const tipos = {
-    0: '[Horário Programado]',
-    1: '[Monitoramento]',
-    2: '[Facilitador]',
-    3: '[Senha Única]',
-    4: '[Senha Única]',
-    5: '[Senha Única]',
-    6: '[IT - Maintenance]'
+    0: '[ Horário Programado ]',
+    1: '[ Monitoramento ]',
+    2: '[ Facilitador ]',
+    3: '[ Senha Única ]',
+    4: '[ Senha Única ]',
+    5: '[ Senha Única ]',
+    6: '[ TI - Manutenção ]'
   };
-  // ==============================
-  // Event description assembly
+
+  const eventosDB = window?.ViawebConfig?.eventosDB || {};
+
   const isArmDisarm = armDisarmCodes.includes(cod);
   let descricao = null;
   let userName = null;
   let userId = null;
   let userMatricula = null;
+
   if (isArmDisarm) {
-    // Define prefix based on event type
-    const baseDesc = cod.startsWith('3')
-      ? '[ Armado ] '
-      : '[ Desarmado ] ';
-    // Known type (fixed mapping)
+    const baseDesc = cod.startsWith('3') ? '[ Armado ] - ' : '[ Desarmado ] - ';
     if (tipos[zonaUsuario]) {
       descricao = `${baseDesc}${tipos[zonaUsuario]}`;
-    // Zone > 6 indicates registered user
     } else if (zonaUsuario > 6) {
-      // Fetch user data from main database
       const userData = await getUserFromDb(local, zonaUsuario);
       if (userData) {
         userName = formatUserName(userData);
@@ -691,9 +678,13 @@ async function saveEventFromTcp(op) {
         descricao = `${baseDesc}Usuário ID ${zonaUsuario} não Cadastrado`;
       }
     }
+  } else {
+    descricao = eventosDB[cod] || op.descricao || `Evento ${cod}`;
+    if (hasComplemento && zonaUsuario > 0) {
+      descricao += ` - Sensor ${zonaUsuario}`;
+    }
   }
-  // ==============================
-  // Final event structure to be persisted
+
   const event = {
     codigoEvento: cod,
     codigo: cod,
@@ -708,8 +699,7 @@ async function saveEventFromTcp(op) {
     userId: userId,
     userMatricula: userMatricula
   };
-  // ==============================
-  // Logs database persistence
+
   try {
     const savedId = await logsRepo.saveIncomingEvent(event);
     if (savedId) {
@@ -717,7 +707,6 @@ async function saveEventFromTcp(op) {
     } else {
       logger.debug(`⏭️ Duplicate event ignored: ${cod} | ISEP: ${local}`);
     }
-    // Send ACK after persistence
     sendAckToViaweb(eventId);
     return { success: true, savedId };
   } catch (err) {

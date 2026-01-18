@@ -1,11 +1,11 @@
-﻿// hot-reload.js - Sistema de hot reload que preserva estado (agora ignorando eventos)
-class HotReload {
+﻿class HotReload {
     constructor(checkInterval = 2000) {
         this.checkInterval = checkInterval;
         this.lastModified = null;
         this.isReloading = false;
+        this.jsFiles = ['main.js', 'config.js', 'crypto.js', 'units-db.js', 'users-db.js']; // ✅ NOVO
+        this.jsLastMod = new Map(); // ✅ NOVO
         
-        // Somente referências de estado que não envolvem eventos
         this.savedState = {
             currentClientId: null,
             selectedEvent: null,
@@ -21,12 +21,12 @@ class HotReload {
         console.log('🔄 Hot Reload ativado');
         this.checkForUpdates();
         setInterval(() => this.checkForUpdates(), this.checkInterval);
-
         window.addEventListener('beforeunload', () => this.saveState());
     }
 
     async checkForUpdates() {
         try {
+            // ✅ NOVO: verifica HTML
             const response = await fetch(window.location.href, {
                 method: 'HEAD',
                 cache: 'no-cache'
@@ -36,23 +36,39 @@ class HotReload {
             
             if (this.lastModified === null) {
                 this.lastModified = lastMod;
-                return;
-            }
-            
-            if (lastMod !== this.lastModified) {
+            } else if (lastMod !== this.lastModified) {
                 console.log('🔄 Mudança detectada no HTML');
                 this.lastModified = lastMod;
                 await this.reload();
+                return;
+            }
+            
+            // ✅ NOVO: verifica arquivos JS
+            for (const file of this.jsFiles) {
+                const jsResp = await fetch(`/${file}`, {
+                    method: 'HEAD',
+                    cache: 'no-cache'
+                });
+                
+                const jsLastMod = jsResp.headers.get('Last-Modified');
+                
+                if (!this.jsLastMod.has(file)) {
+                    this.jsLastMod.set(file, jsLastMod);
+                } else if (this.jsLastMod.get(file) !== jsLastMod) {
+                    console.log(`🔄 Mudança detectada em ${file}`);
+                    this.jsLastMod.set(file, jsLastMod);
+                    await this.reload();
+                    return;
+                }
             }
         } catch (err) {
-            // Silencioso - não precisa logar erro de verificação
+            // Silencioso
         }
     }
 
     saveState() {
         try {
             const state = {
-                // IGNORANDO eventos
                 currentClientId: window.currentClientId || null,
                 selectedEvent: window.selectedEvent || null,
                 selectedUnit: document.getElementById('unit-select')?.value || null,
@@ -82,7 +98,6 @@ class HotReload {
                 }
             }
 
-            // NÃO restaura eventos/alarms/pendentes
             if (state.currentClientId) {
                 window.currentClientId = state.currentClientId;
             }
@@ -111,9 +126,7 @@ class HotReload {
             if (window.updateEventList) window.updateEventList();
 
             console.log('✅ Estado restaurado (sem eventos)');
-
             sessionStorage.removeItem('viawebState');
-
             return true;
         } catch (err) {
             console.error('❌ Erro ao restaurar estado:', err);
@@ -126,11 +139,8 @@ class HotReload {
         this.isReloading = true;
 
         console.log('🔄 Recarregando página...');
-
         this.saveState();
-
         await new Promise(resolve => setTimeout(resolve, 100));
-
         window.location.reload();
     }
 }
