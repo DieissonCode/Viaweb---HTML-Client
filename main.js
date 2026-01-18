@@ -574,7 +574,7 @@ class CloseEventModal {
     render(group, type) {
         if (!this.container || !this.tbody) return;
 
-        if (type !== 'alarm' && type !== 'pendente') {
+        if (type !== 'alarm' && type !== 'pendente' && type !== 'relatorio') {
             this.container.style.display = 'none';
             this.tbody.innerHTML = '';
             if (this.titleEl) this.titleEl.textContent = 'Encerrar Evento';
@@ -582,13 +582,19 @@ class CloseEventModal {
             return;
         }
 
-        this.container.style.display = 'block';
-        if (this.titleEl) this.titleEl.textContent = type === 'alarm' ? 'Encerrar Disparo' : 'Encerrar Evento';
+        this.container.style.display = type === 'relatorio' ? 'none' : 'block';
+        
+        if (this.titleEl) {
+            if (type === 'alarm') this.titleEl.textContent = 'Encerrar Disparo';
+            else if (type === 'pendente') this.titleEl.textContent = 'Encerrar Evento';
+            else if (type === 'relatorio') this.titleEl.textContent = 'Registrar Relatório';
+        }
 
-        // ✅ CORRIGIDO - usa função correta para cada tipo
         const events = type === 'alarm' 
             ? getAssociatedEventsForAlarm(group) 
-            : getAssociatedEventsForPendente(group);
+            : type === 'pendente'
+            ? getAssociatedEventsForPendente(group)
+            : [];
             
         if (this.badgeEl) this.badgeEl.textContent = `${events.length} evento${events.length === 1 ? '' : 's'}`;
 
@@ -698,7 +704,6 @@ function ingestNormalizedEvent(ev) {
         const falhaKey = `${ev.local}-1${baseCode}-${zona}`;
 
         if (isFalha) {
-            // Cria ou atualiza pendente
             if (!activePendentes.has(falhaKey)) {
                 activePendentes.set(falhaKey, { first: ev, events: [ev], resolved: false });
             } else {
@@ -707,9 +712,24 @@ function ingestNormalizedEvent(ev) {
         }
 
         if (isRestauro) {
-            // Marca como resolvido
             if (activePendentes.has(falhaKey)) {
                 activePendentes.get(falhaKey).resolved = true;
+                
+                const group = activePendentes.get(falhaKey);
+                console.log(`✅ Auto-encerrando pendente: ${falhaKey}`);
+                
+                logClosureToServer(group, 'pendente', '[ Auto-encerrado pelo sistema - Restauro recebido ]')
+                    .then(() => {
+                        activePendentes.delete(falhaKey);
+                        updateCounts();
+                        updateEventList();
+                    })
+                    .catch(err => {
+                        console.error('❌ Erro no auto-encerramento:', err);
+                        activePendentes.delete(falhaKey);
+                        updateCounts();
+                        updateEventList();
+                    });
             }
         }
     }
@@ -1015,15 +1035,22 @@ function populateUnitSelect() {
         opt.value = u.value;
         opt.textContent = `${u.local} (${u.value})`;
         
-        // ✅ NOVO: aplica cor baseada em status
-        const cached = statusCache.get(String(u.value).toUpperCase());
+        // Status visual SEM reflow
+        const isepKey = String(u.value).trim().toUpperCase().padStart(4, '0');
+        const cached = statusCache.get(isepKey);
+        
         if (cached) {
-            opt.style.color = cached.status === 'online' ? '#10b981' : '#ef4444';
-            opt.style.fontWeight = '600';
+            if (cached.status === 'online') {
+                opt.dataset.status = 'online';
+            } else if (cached.status === 'offline') {
+                opt.dataset.status = 'offline';
+            }
         }
         
         unitSelect.appendChild(opt);
     });
+    
+    console.log(`📋 ${units.length} unidades renderizadas, ${statusCache.size} status em cache`);
 }
 
 async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
@@ -1046,6 +1073,11 @@ function normalizeStoredUser(user) {
 function getPartitionName(pos, clientId) {
     const name = partitionNames[pos] || "";
     return name ? `[ ${pos} ] - ${name}` : pos;
+}
+
+function getUnitDescription(isep) {
+    const unit = units.find(u => String(u.value) === String(isep));
+    return unit ? `${isep} - ${unit.local}` : isep;
 }
 
 function updatePartitions(data) {
@@ -1196,10 +1228,53 @@ async function updateEventList() {
     else if (currentTab === 'sistema') sourceEvents = allEvents.filter(ev => sistemaCodes.includes(ev.codigoEvento));
     else if (currentTab === 'usuarios') sourceEvents = allEvents.filter(ev => armDisarmCodes.includes(ev.codigoEvento));
     else if (currentTab === 'historico') {
-        if (!window.closuresData) {
-            await loadClosures();
-        }
+        if (!window.closuresData) await loadClosures();
         sourceEvents = groupClosuresByIsepAndId(window.closuresData || []);
+    }
+    else if (currentTab === 'status') {
+        const showArmed = document.getElementById('toggle-armed')?.checked ?? true;
+        const showDisarmed = document.getElementById('toggle-disarmed')?.checked ?? true;
+        
+        const statusUnits = units.map(u => {
+            const isep = String(u.value).toUpperCase().padStart(4, '0');
+            const cached = statusCache.get(isep);
+            return {
+                isep: u.value,
+                local: u.local,
+                status: cached?.status || 'desconhecido',
+                since: cached?.since,
+                armed: cached?.armed || false,
+                disarmed: cached?.disarmed || false,
+                allArmed: cached?.allArmed || false,
+                allDisarmed: cached?.allDisarmed || false,
+                partialArmed: cached?.partialArmed || false
+            };
+        });
+        
+        // Ordena por nome da unidade
+        statusUnits.sort((a, b) => a.local.localeCompare(b.local));
+        
+        // Filtro por armadas/desarmadas
+        sourceEvents = statusUnits
+            .filter(u => {
+                // Se offline, sempre mostra
+                if (u.status === 'offline') return true;
+                
+                // Se desconhecido, sempre mostra
+                if (!u.armed && !u.disarmed) return true;
+                
+                // Filtra por estado
+                if (u.allArmed || u.partialArmed) {
+                    return showArmed;
+                }
+                
+                if (u.allDisarmed) {
+                    return showDisarmed;
+                }
+                
+                return true;
+            })
+            .map(u => ({ statusUnit: u, type: 'status' }));
     }
     else if (currentTab === 'offline') {
         const offlineUnits = Array.from(statusCache.entries())
@@ -1209,15 +1284,48 @@ async function updateEventList() {
         sourceEvents = offlineUnits.map(u => ({ offline: u, type: 'offline' }));
     }
 
-    let filtered = sourceEvents.slice(-300);
+    let filtered = sourceEvents;
+
+    // Aplicar filtro de texto
     if (filterTerm) {
         filtered = filtered.filter(item => {
+            // Para closures
+            if (item.closure) {
+                const c = item.closure;
+                const unit = units.find(u => String(u.value) === String(c.ISEP));
+                const unitName = unit ? unit.local : '';
+                const searchText = `${c.ISEP} ${unitName} ${c.Tipo} ${c.Procedimento} ${c.Descricao} ${c.ClosedBy}`.toLowerCase();
+                return searchText.includes(filterTerm);
+            }
+            
+            // Para offline
+            if (item.offline) {
+                const u = item.offline;
+                const unit = units.find(un => String(un.value) === String(u.isep));
+                const unitName = unit ? unit.local : '';
+                const searchText = `${u.isep} ${unitName} offline`.toLowerCase();
+                return searchText.includes(filterTerm);
+            }
+            
+            // Para status
+            if (item.statusUnit) {
+                const u = item.statusUnit;
+                const statusText = u.status === 'offline' ? 'offline' : 'online';
+                const armText = u.allArmed ? 'armada' : u.allDisarmed ? 'desarmada' : u.partialArmed ? 'parcial' : '';
+                const searchText = `${u.isep} ${u.local} ${statusText} ${armText}`.toLowerCase();
+                return searchText.includes(filterTerm);
+            }
+            
+            // Para eventos normais ou groups
             const ev = item.group ? item.group.first : item;
-            const text = `${ev.local} ${ev.descricao} ${ev.data} ${ev.hora} ${ev.complemento}`.toLowerCase();
-            return text.includes(filterTerm);
+            const unit = units.find(u => String(u.value) === String(ev.local || ev.clientId));
+            const unitName = unit ? unit.local : '';
+            const searchText = `${ev.local} ${unitName} ${ev.descricao} ${ev.data} ${ev.hora} ${ev.complemento}`.toLowerCase();
+            return searchText.includes(filterTerm);
         });
     }
 
+    // Limitar exibição
     const maxDisplayEvents = 100;
     const displayEvents = filtered.slice(-maxDisplayEvents).reverse();
 
@@ -1256,40 +1364,91 @@ async function updateEventList() {
             tr.className = 'event-row';
             tr.style.cursor = 'pointer';
             
+            // Aplicar cor baseada no tipo
+            if (c.Tipo === 'alarm') tr.classList.add('alarm');
+            else if (c.Tipo === 'pendente') tr.classList.add('falha');
+            else if (c.Tipo === 'relatorio') tr.classList.add('armedisarm');
+            
             const date = new Date(c.DataEvento);
             const countBadge = count > 0 
                 ? `<span class="event-count-badge">${count} evento${count === 1 ? '' : 's'}</span>` 
                 : '<span class="event-count-badge empty">sem eventos</span>';
             
+            const tipoLabel = c.Tipo === 'alarm' ? 'Disparo' : c.Tipo === 'pendente' ? 'Pendente' : 'Relatório';
+            const tipoClass = c.Tipo === 'alarm' ? 'closure-type-alarm' : c.Tipo === 'pendente' ? 'closure-type-pendente' : 'closure-type-relatorio';
+            
             tr.innerHTML = `
-                <td>${c.ISEP}</td>
+                <td>${getUnitDescription(c.ISEP)}</td>
                 <td>${date.toLocaleDateString('pt-BR')}</td>
                 <td>${date.toLocaleTimeString('pt-BR')}</td>
-                <td>${c.Complemento || '-'}</td>
+                <td><span class="${tipoClass}">${tipoLabel}</span></td>
                 <td>${getPartitionName(c.Particao, c.ISEP)}</td>
                 <td>
-                    ${c.Descricao} (${c.Tipo}) - por ${c.ClosedByDisplay || c.ClosedBy}
-                    ${countBadge}
+                    <div class="closure-description">${c.Procedimento || c.Descricao} ${countBadge}</div>
+                    <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">por ${c.ClosedByDisplay || c.ClosedBy}</div>
                 </td>
             `;
             
             tr.onclick = () => closureViewUI.open(c, item.events || []);
             return;
-         } else if (item.offline) {
+        } else if (item.offline) {
             const u = item.offline;
             const tr = eventList.insertRow();
             tr.className = 'event-row offline';
             
-            const unit = units.find(un => String(un.value) === String(u.isep));
             const sinceDate = new Date(u.since);
             
             tr.innerHTML = `
-                <td>${u.isep}</td>
+                <td>${getUnitDescription(u.isep)}</td>
                 <td>${sinceDate.toLocaleDateString('pt-BR')}</td>
                 <td>${sinceDate.toLocaleTimeString('pt-BR')}</td>
                 <td>-</td>
                 <td>-</td>
-                <td>${unit ? unit.local : 'Desconhecido'} - Offline desde ${sinceDate.toLocaleString('pt-BR')}</td>
+                <td>Offline desde ${sinceDate.toLocaleString('pt-BR')}</td>
+            `;
+            return;
+        } else if (item.statusUnit) {
+            const u = item.statusUnit;
+            const tr = eventList.insertRow();
+            tr.className = 'event-row';
+            
+            // Classes visuais
+            if (u.status === 'offline') {
+                tr.classList.add('offline');
+            } else if (u.allArmed) {
+                tr.classList.add('status-all-armed');
+            } else if (u.allDisarmed) {
+                tr.classList.add('status-all-disarmed');
+            } else if (u.partialArmed) {
+                tr.classList.add('status-partial-armed');
+            }
+            
+            const sinceDate = u.since ? new Date(u.since).toLocaleString('pt-BR') : '-';
+            
+            let statusText = '';
+            let armStatus = '';
+            
+            if (u.status === 'offline') {
+                statusText = '🔴 Offline';
+                armStatus = '-';
+            } else if (u.status === 'online') {
+                statusText = '🟢 Online';
+                
+                if (u.allArmed) armStatus = '🛡️ Todas Armadas';
+                else if (u.allDisarmed) armStatus = '🔓 Todas Desarmadas';
+                else if (u.partialArmed) armStatus = '⚠️ Parcialmente Armada';
+                else armStatus = '❓ Desconhecido';
+            } else {
+                statusText = '⚪ Desconhecido';
+                armStatus = '-';
+            }
+            
+            tr.innerHTML = `
+                <td>${getUnitDescription(u.isep)}</td>
+                <td colspan="2">${statusText}</td>
+                <td>${armStatus}</td>
+                <td>${sinceDate}</td>
+                <td>-</td>
             `;
             return;
         } else {
@@ -1352,7 +1511,7 @@ async function updateEventList() {
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
         }
 
-        tr.innerHTML = `<td>${ev.local || 'N/A'}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}${lockInfo ? ' 🔒' : ''}</td>`;
+        tr.innerHTML = `<td>${getUnitDescription(ev.local || ev.clientId || 'N/A')}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}${lockInfo ? ' 🔒' : ''}</td>`;
 
         if (userData) {
             let hoverTimer = null;
@@ -1533,6 +1692,51 @@ function fetchClientStatus(idISEP) {
         : { oper: [{ id: cmdId, acao: "listarClientes", idISEP: [isepFormatted] }] };
     sendCommand(cmd);
 }
+function fetchAllPartitionsStatus() {
+    if (!units || units.length === 0) return;
+    
+    console.log('🔄 Buscando status de todas as centrais...');
+    
+    units.forEach(unit => {
+        const isep = String(unit.value).trim().toUpperCase().padStart(4, '0');
+        if (!isValidISEP(isep)) return;
+        
+        const cmdId = generateCommandId();
+        pendingCommands.set(cmdId, resp => handlePartitionStatusResponse(resp, isep));
+        
+        const cmd = VC.getPartitionsCommand 
+            ? VC.getPartitionsCommand(isep, cmdId) 
+            : { oper: [{ acao: "executar", idISEP: isep, id: cmdId, comando: [{ cmd: "particoes" }] }] };
+        
+        sendCommand(cmd);
+    });
+}
+
+function handlePartitionStatusResponse(resp, isep) {
+    const data = resp?.resposta;
+    if (!data || data.length === 0) return;
+    
+    if (data[0]?.cmd === 'erro') {
+        return;
+    }
+    
+    const hasArmed = data.some(p => p.armado === 1);
+    const hasDisarmed = data.some(p => p.armado === 0);
+    
+    const cached = statusCache.get(isep);
+    if (cached) {
+        cached.armed = hasArmed;
+        cached.disarmed = hasDisarmed;
+        cached.allArmed = hasArmed && !hasDisarmed;
+        cached.allDisarmed = !hasArmed && hasDisarmed;
+        cached.partialArmed = hasArmed && hasDisarmed;
+    }
+    
+    const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (currentTab === 'status') {
+        updateEventList();
+    }
+}
 
 function handlePartitionsResponse(resp) {
     const data = resp?.resposta;
@@ -1587,6 +1791,7 @@ function applyStatusFromViaweb(viawebArr) {
             }
         });
     });
+    populateUnitSelect();
 }
 
 function handleListarClientesAllResponse(resp) {
@@ -1595,6 +1800,12 @@ function handleListarClientesAllResponse(resp) {
     if (!viawebArr || !Array.isArray(viawebArr)) return;
     applyStatusFromViaweb(viawebArr);
     populateUnitSelect();
+    
+    // Atualiza tab status se estiver ativa
+    const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (currentTab === 'status') {
+        updateEventList();
+    }
 }
 
 function handleListarClientesResponse(resp, isepFormatted) {
@@ -1604,6 +1815,7 @@ function handleListarClientesResponse(resp, isepFormatted) {
     applyStatusFromViaweb(viawebArr.filter(vw =>
         (vw.cliente || []).some(cli => String(cli.idISEP).toUpperCase() === isepFormatted.toUpperCase())
     ));
+    populateUnitSelect();
 }
 
 function updateStatus(connected) {
@@ -1766,14 +1978,30 @@ unitSearch.addEventListener('input', e => {
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
         const term = e.target.value.toLowerCase();
+        const currentSelected = unitSelect.value; // Salva seleção atual
+        
         unitSelect.innerHTML = '';
         units.filter(u => (u.local||'').toLowerCase().includes(term) || (u.value||'').includes(term) || (u.sigla||'').toLowerCase().includes(term))
              .forEach(u => {
                  const opt = document.createElement('option');
                  opt.value = u.value;
                  opt.textContent = `${u.local} (${u.value})`;
+                 
+                 const isepKey = String(u.value).trim().toUpperCase().padStart(4, '0');
+                 const cached = statusCache.get(isepKey);
+                 
+                 if (cached) {
+                     if (cached.status === 'online') opt.dataset.status = 'online';
+                     else if (cached.status === 'offline') opt.dataset.status = 'offline';
+                 }
+                 
                  unitSelect.appendChild(opt);
              });
+        
+        // Restaura seleção se ainda existir
+        if (currentSelected) {
+            unitSelect.value = currentSelected;
+        }
     }, 300);
 });
 
@@ -1789,13 +2017,44 @@ autoUpdateCheckbox.addEventListener('change', () => {
     } else clearInterval(updateInterval);
 });
 
+// Atualiza status quando muda para tab status
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        
+        const statusFilters = document.getElementById('status-filters');
+        if (btn.dataset.tab === 'status') {
+            statusFilters.style.display = 'flex';
+            
+            // Busca inicial
+            fetchAllClientStatuses();
+            setTimeout(() => fetchAllPartitionsStatus(), 2000);
+            
+            // Inicia atualização automática
+            if (statusUpdateInterval) clearInterval(statusUpdateInterval);
+            statusUpdateInterval = setInterval(() => {
+                console.log('🔄 Atualizando status das centrais...');
+                fetchAllClientStatuses();
+                setTimeout(() => fetchAllPartitionsStatus(), 2000);
+            }, 30000);
+        } else {
+            statusFilters.style.display = 'none';
+            
+            // Para atualização automática
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+                statusUpdateInterval = null;
+            }
+        }
+        
         updateEventList();
     });
 });
+
+document.getElementById('toggle-armed')?.addEventListener('change', () => updateEventList());
+document.getElementById('toggle-disarmed')?.addEventListener('change', () => updateEventList());
+
 eventsFilter.addEventListener('input', () => updateEventList());
 
 async function logClosureToServer(group, type, procedureText) {
@@ -1933,6 +2192,34 @@ disarmAllButton.addEventListener('click', () => {
     }
 });
 
+// Botão de relatório
+document.getElementById('report-button')?.addEventListener('click', () => {
+    if (!currentUser) {
+        authManager?.show?.();
+        return;
+    }
+    
+    if (!selectedEvent || !currentClientId) {
+        alert('Selecione uma unidade primeiro');
+        return;
+    }
+    
+    const reportEvent = {
+        first: {
+            local: currentClientId,
+            clientId: currentClientId,
+            codigoEvento: '9999',
+            complemento: 0,
+            particao: 1,
+            descricao: 'Relatório Manual',
+            timestamp: Date.now()
+        },
+        events: []
+    };
+    
+    closeEventUI.open(reportEvent, 'relatorio');
+});
+
 function handleClosureNotification(data) {
     const { isep, codigo, complemento, closedBy } = data;
     
@@ -1989,6 +2276,38 @@ window.addEventListener('beforeunload', () => {
 });
 
 connectWebSocket();
+
+// Atualização automática de status a cada 30s
+let statusUpdateInterval = null;
+
+function startStatusAutoUpdate() {
+    if (statusUpdateInterval) clearInterval(statusUpdateInterval);
+    
+    statusUpdateInterval = setInterval(() => {
+        const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+        if (currentTab === 'status') {
+            console.log('🔄 Atualizando status das centrais...');
+            fetchAllClientStatuses();
+            setTimeout(() => fetchAllPartitionsStatus(), 2000);
+        }
+    }, 30000);
+}
+
+// Iniciar quando mudar para tab status
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.tab === 'status') {
+                startStatusAutoUpdate();
+            } else {
+                if (statusUpdateInterval) {
+                    clearInterval(statusUpdateInterval);
+                    statusUpdateInterval = null;
+                }
+            }
+        });
+    });
+});
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

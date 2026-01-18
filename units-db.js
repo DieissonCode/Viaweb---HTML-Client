@@ -36,7 +36,9 @@
                     local: unit.local,
                     label: unit.label || unit.local,
                     sigla: unit.local.substring(0, 3).toUpperCase()
-                }));
+                }))
+                .sort((a, b) => a.local.localeCompare(b.local)); // Ordena por nome
+                
                 cacheTimestamp = Date.now();
                 console.log(`✅ ${cachedUnits.length} unidades carregadas da API`);
                 return cachedUnits;

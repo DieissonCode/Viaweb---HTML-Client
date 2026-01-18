@@ -213,13 +213,16 @@
             <span id="status-text">Viaweb - Cotrijal</span>
             <span id="status-icon"></span>
         </div>
-        <button id="login-btn" type="button">🔑 Login</button>
-        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Alternar tema">🌙</button>
+        <div class="header-right">
+            <div id="auth-status-inline">
+                <span id="auth-user-label-inline">Usuário: Não autenticado</span>
+                <button id="auth-logout-btn-inline" class="ghost small" style="display:none">Sair</button>
+            </div>
+            <button id="login-btn" type="button">🔑 Login</button>
+            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme" title="Alternar tema">🌙</button>
+        </div>
     </h1>
-    <div id="auth-status-bar">
-        <span id="auth-user-label">Usuário: Não autenticado</span>
-        <button id="auth-logout-btn" class="ghost small" style="display:none">Sair</button>
-    </div>
+
     <div class="panels-container" id="panels-container">
         <div class="panel panel-left" id="control-panel-section">
             <div class="section-header" id="control-header">
@@ -246,6 +249,7 @@
                         <button id="disarm-button" disabled>🔓 Desarmar</button>
                         <button id="arm-all-button" disabled>🛡️ Armar Todas</button>
                         <button id="disarm-all-button" disabled>🔓 Desarmar Todas</button>
+                        <button id="report-button" style="background:var(--primary)">📝 Relatório</button>
                     </div>
 
                     <hr>
@@ -288,17 +292,28 @@
                         <button class="tab-btn" data-tab="sistema">Sistema</button>
                         <button class="tab-btn" data-tab="usuarios">Arme e Desarme</button>
                         <button class="tab-btn" data-tab="historico">Finalizados</button>
+                        <button class="tab-btn" data-tab="status">Status Centrais</button>
                         <button class="tab-btn" data-tab="offline">Offline (<span id="offline-count">0</span>)</button>
+                    </div>
+                    <div id="status-filters" style="display:none; gap:12px; margin-top:8px;">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-armed" checked>
+                            <span>Armadas</span>
+                        </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-disarmed" checked>
+                            <span>Desarmadas</span>
+                        </label>
                     </div>
                     <table id="events-table">
                         <thead>
                             <tr>
-                                <th>ISEP</th>
+                                <th>Central (ISEP)</th>
                                 <th>Data</th>
                                 <th>Hora</th>
                                 <th>Zona/Usr</th>
                                 <th>Partição</th>
-                                <th>Descrição</th>
+                                <th>Descrição / Detalhes</th>
                             </tr>
                         </thead>
                         <tbody id="eventList"></tbody>
@@ -459,21 +474,6 @@
 
         document.getElementById('events-header').addEventListener('click', () => {
             handleClick(rightPanel, leftPanel);
-        });
-
-        // Use unitSelect from main.js (already declared there)
-        const unitSelectEl = document.getElementById('unit-select');
-        unitSelectEl.addEventListener('wheel', (e) => {
-            e.preventDefault();
-
-            const delta = e.deltaY > 0 ? 1 : -1;
-            let newIndex = unitSelectEl.selectedIndex + delta;
-
-            if (newIndex < 0) newIndex = 0;
-            if (newIndex >= unitSelectEl.options.length) newIndex = unitSelectEl.options.length - 1;
-
-            unitSelectEl.selectedIndex = newIndex;
-            unitSelectEl.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
         // Initialize layout on page load

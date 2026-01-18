@@ -9,8 +9,10 @@ class AuthManager {
         this.cancelBtn = document.getElementById('auth-cancel-btn');
         this.errorDiv = document.getElementById('auth-error');
         this.loginBtn = document.getElementById('login-btn');
-        this.userLabel = document.getElementById('auth-user-label');
-        this.logoutBtn = document.getElementById('auth-logout-btn');
+        
+        // Suporte para ambos os locais (compatibilidade)
+        this.userLabel = document.getElementById('auth-user-label-inline') || document.getElementById('auth-user-label');
+        this.logoutBtn = document.getElementById('auth-logout-btn-inline') || document.getElementById('auth-logout-btn');
 
         this.init();
     }
