@@ -807,8 +807,8 @@ function updatePartitions(data) {
         div.className = 'partition-item';
         div.innerHTML = `
             <input type="checkbox" id="partition-${p.pos}" value="${p.pos}">
-            <span class="partition-status ${statusCls}">${statusText}</span>
             <label for="partition-${p.pos}">${name}</label>
+            <span class="partition-status ${statusCls}">${statusText}</span>
         `;
         partitionsList.appendChild(div);
 
@@ -851,8 +851,8 @@ function updateZones(data) {
             div.className = 'zone-item';
             div.innerHTML = `
                 <input type="checkbox" id="zone-${z.pos}" value="${z.pos}">
+                <label for="zone-${z.pos}">Sensor ${num}</label>
                 <span class="zone-status ${cls}">${txt}</span>
-                <label for="zone-${z.pos}">Sensor ${num}: ${txt}</label>
             `;
             colDiv.appendChild(div);
         }
