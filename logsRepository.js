@@ -1,8 +1,8 @@
 ﻿﻿﻿const mssql = require('mssql');
 
 // Simple in‑memory cache for deduplication (5 min TTL)
-const DEDUPE_TTL_MS = 5 * 60 * 1000;
-const dedupeCache = new Map(); // key → { ts, count }
+    const DEDUPE_TTL_MS = 5 * 60 * 1000;
+    const dedupeCache = new Map(); // key → { ts, count }
 
 function pruneDedupeCache() {
     const now = Date.now();
@@ -59,6 +59,7 @@ function formatDateTimeSql(dateObj) {
 function logDebug(step, payload) {
     // console.log(`[logs-repo] ${step}:`, payload);
 }
+
 function logQuery(step, sql, params) {
     // console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
 }
