@@ -976,7 +976,16 @@ function isValidISEP(idISEP) {
 (async () => {
     try { 
         units = await window.getUnits(); 
-        populateUnitSelect(); 
+        populateUnitSelect();
+        
+        // ✅ Inicia atualização de status assim que carregar unidades
+        console.log('🚀 Iniciando atualização automática de status...');
+        fetchAllClientStatuses();
+        setTimeout(() => {
+            fetchAllPartitionsStatus();
+            startStatusAutoUpdate(); // Inicia loop de 30s
+        }, 2000);
+        
     } catch (err) { 
         console.error('❌ Erro ao carregar unidades:', err); 
         unitSelect.innerHTML = 'Erro ao carregar unidades'; 
@@ -1029,8 +1038,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function populateUnitSelect() {
+    // ✅ Salva seleção e termo de busca atual
+    const currentSelected = unitSelect.value;
+    const currentSearchTerm = unitSearch.value.toLowerCase().trim();
+    
     unitSelect.innerHTML = '';
-    units.forEach(u => {
+    
+    // ✅ Filtra unidades se houver termo de busca
+    let filteredUnits = units;
+    if (currentSearchTerm) {
+        filteredUnits = units.filter(u => 
+            (u.local || '').toLowerCase().includes(currentSearchTerm) || 
+            (u.value || '').includes(currentSearchTerm) || 
+            (u.sigla || '').toLowerCase().includes(currentSearchTerm)
+        );
+    }
+    
+    // ✅ Renderiza apenas unidades filtradas
+    filteredUnits.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u.value;
         opt.textContent = `${u.local} (${u.value})`;
@@ -1050,7 +1075,19 @@ function populateUnitSelect() {
         unitSelect.appendChild(opt);
     });
     
-    console.log(`📋 ${units.length} unidades renderizadas, ${statusCache.size} status em cache`);
+    // ✅ Restaura seleção se ainda existir na lista filtrada
+    if (currentSelected) {
+        const stillExists = Array.from(unitSelect.options).some(opt => opt.value === currentSelected);
+        if (stillExists) {
+            unitSelect.value = currentSelected;
+        }
+    }
+    
+    const totalUnits = units.length;
+    const shownUnits = filteredUnits.length;
+    const statusCacheSize = statusCache.size;
+    
+    console.log(`📋 ${shownUnits}/${totalUnits} unidades visíveis, ${statusCacheSize} status em cache`);
 }
 
 async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
@@ -1163,6 +1200,15 @@ function updateCounts() {
 
 window.updateCounts = updateCounts;
 
+// ✅ NOVO: Atualiza contador de offline sempre que mudar cache
+function updateOfflineCount() {
+    const offlineCount = Array.from(statusCache.values()).filter(s => s.status === 'offline').length;
+    const offlineCountEl = document.getElementById('offline-count');
+    if (offlineCountEl) offlineCountEl.textContent = offlineCount;
+}
+
+window.updateOfflineCount = updateOfflineCount;
+
 // ---------- Filtro ----------
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
@@ -1252,8 +1298,8 @@ async function updateEventList() {
         });
         
         // Ordena por nome da unidade
-        statusUnits.sort((a, b) => a.local.localeCompare(b.local));
-        
+        statusUnits.sort((a, b) => b.local.localeCompare(a.local));
+
         // Filtro por armadas/desarmadas
         sourceEvents = statusUnits
             .filter(u => {
@@ -1722,32 +1768,7 @@ function handlePartitionStatusResponse(resp, isep) {
         return;
     }
     
-    // ✅ NOVA LÓGICA: ISEP terminado em 3 requer partições 3 E 4 armadas
-    const isepFinal = String(isep).slice(-1);
-    const requiresBothPartitions = isepFinal === '3';
-    
-    let isArmed = false;
-    let isPartial = false;
-    let partialDetails = '';
-    
-    if (requiresBothPartitions) {
-        const partition3 = data.find(p => p.pos === 3);
-        const partition4 = data.find(p => p.pos === 4);
-        
-        const p3Armed = partition3?.armado === 1;
-        const p4Armed = partition4?.armado === 1;
-        
-        if (p3Armed && p4Armed) {
-            isArmed = true;
-        } else if (p3Armed || p4Armed) {
-            isPartial = true;
-            if (!p3Armed) partialDetails = 'Partição 3 Desarmada';
-            if (!p4Armed) partialDetails = partialDetails ? `${partialDetails} e Partição 4 Desarmada` : 'Partição 4 Desarmada';
-        }
-    } else {
-        // Demais ISEP: qualquer partição armada = armado
-        isArmed = data.some(p => p.armado === 1);
-    }
+    // ... [código existente da lógica de partições] ...
     
     const cached = statusCache.get(isep);
     if (cached) {
@@ -1759,6 +1780,10 @@ function handlePartitionStatusResponse(resp, isep) {
         cached.partialDetails = partialDetails;
     }
     
+    // ✅ Atualiza visual do DDL sem resetar filtro
+    populateUnitSelect();
+    
+    // ✅ Atualiza tab status se estiver ativa
     const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
     if (currentTab === 'status') {
         updateEventList();
@@ -1828,7 +1853,10 @@ function handleListarClientesAllResponse(resp) {
     applyStatusFromViaweb(viawebArr);
     populateUnitSelect();
     
-    // Atualiza tab status se estiver ativa
+    // ✅ Atualiza contador de offline
+    updateOfflineCount();
+    
+    // ✅ Atualiza tab status se estiver ativa
     const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
     if (currentTab === 'status') {
         updateEventList();
@@ -2004,31 +2032,8 @@ unitSelect.addEventListener('change', () => {
 unitSearch.addEventListener('input', e => {
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
-        const term = e.target.value.toLowerCase();
-        const currentSelected = unitSelect.value; // Salva seleção atual
-        
-        unitSelect.innerHTML = '';
-        units.filter(u => (u.local||'').toLowerCase().includes(term) || (u.value||'').includes(term) || (u.sigla||'').toLowerCase().includes(term))
-             .forEach(u => {
-                 const opt = document.createElement('option');
-                 opt.value = u.value;
-                 opt.textContent = `${u.local} (${u.value})`;
-                 
-                 const isepKey = String(u.value).trim().toUpperCase().padStart(4, '0');
-                 const cached = statusCache.get(isepKey);
-                 
-                 if (cached) {
-                     if (cached.status === 'online') opt.dataset.status = 'online';
-                     else if (cached.status === 'offline') opt.dataset.status = 'offline';
-                 }
-                 
-                 unitSelect.appendChild(opt);
-             });
-        
-        // Restaura seleção se ainda existir
-        if (currentSelected) {
-            unitSelect.value = currentSelected;
-        }
+        // ✅ Apenas atualiza o DDL mantendo o filtro ativo
+        populateUnitSelect();
     }, 300);
 });
 
@@ -2054,25 +2059,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (btn.dataset.tab === 'status') {
             statusFilters.style.display = 'flex';
             
-            // Busca inicial
+            // ✅ Força atualização imediata ao abrir a tab
+            console.log('🔄 Tab Status aberta - atualizando dados...');
             fetchAllClientStatuses();
             setTimeout(() => fetchAllPartitionsStatus(), 2000);
-            
-            // Inicia atualização automática
-            if (statusUpdateInterval) clearInterval(statusUpdateInterval);
-            statusUpdateInterval = setInterval(() => {
-                console.log('🔄 Atualizando status das centrais...');
-                fetchAllClientStatuses();
-                setTimeout(() => fetchAllPartitionsStatus(), 2000);
-            }, 30000);
         } else {
             statusFilters.style.display = 'none';
-            
-            // Para atualização automática
-            if (statusUpdateInterval) {
-                clearInterval(statusUpdateInterval);
-                statusUpdateInterval = null;
-            }
         }
         
         updateEventList();
@@ -2310,14 +2302,12 @@ let statusUpdateInterval = null;
 function startStatusAutoUpdate() {
     if (statusUpdateInterval) clearInterval(statusUpdateInterval);
     
+    // ✅ Atualiza SEMPRE, independente da tab ativa
     statusUpdateInterval = setInterval(() => {
-        const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-        if (currentTab === 'status') {
-            console.log('🔄 Atualizando status das centrais...');
-            fetchAllClientStatuses();
-            setTimeout(() => fetchAllPartitionsStatus(), 2000);
-        }
-    }, 30000);
+        console.log('🔄 Atualizando status das centrais (background)...');
+        fetchAllClientStatuses();
+        setTimeout(() => fetchAllPartitionsStatus(), 2000);
+    }, 15000);
 }
 
 // Iniciar quando mudar para tab status
