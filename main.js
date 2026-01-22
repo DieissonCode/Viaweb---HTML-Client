@@ -1002,13 +1002,35 @@ function isValidISEP(idISEP) {
     loadInitialHistory(300);
 })();
 
-(async () => {  // Carrega encerramentos
-    try {
-        await loadClosures();
-        console.log('✅ Encerramentos carregados');
-    } catch (err) {
-        console.error('❌ Erro ao carregar encerramentos:', err);
+(async () => {
+    try { 
+        units = await window.getUnits(); 
+        populateUnitSelect();
+        
+        console.log('🚀 Iniciando atualização automática de status...');
+        
+        // ✅ Primeiro busca status online/offline
+        fetchAllClientStatuses();
+        
+        // ✅ Depois busca partições (aguarda 3s para cache popular)
+        setTimeout(() => {
+            fetchAllPartitionsStatus();
+            startStatusAutoUpdate();
+        }, 3000);
+        
+    } catch (err) { 
+        console.error('❌ Erro ao carregar unidades:', err); 
+        unitSelect.innerHTML = 'Erro ao carregar unidades'; 
     }
+    
+    try { 
+        await window.UsersDB.getUsers(); 
+        console.log('✅ Usuários carregados antes do histórico');
+    } catch (err) { 
+        console.error('❌ Erro ao carregar usuários:', err); 
+    }
+    
+    loadInitialHistory(300);
 })();
 
 const themeToggle = document.getElementById('theme-toggle');
@@ -1086,8 +1108,11 @@ function populateUnitSelect() {
     const totalUnits = units.length;
     const shownUnits = filteredUnits.length;
     const statusCacheSize = statusCache.size;
+    const withArmStatus = Array.from(statusCache.values()).filter(s => 
+        s.armed || s.disarmed || s.allArmed || s.allDisarmed || s.partialArmed
+    ).length;
     
-    console.log(`📋 ${shownUnits}/${totalUnits} unidades visíveis, ${statusCacheSize} status em cache`);
+    console.log(`📋 ${shownUnits}/${totalUnits} unidades visíveis, ${withArmStatus}/${statusCacheSize} com status de arme/desarme`);
 }
 
 async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
@@ -1226,6 +1251,8 @@ function updateStatusTabLabel() {
     }
     
     statusTab.textContent = `Status Centrais - ${updatedUnits}/${totalUnits}${timeLabel}`;
+    
+    console.log(`📊 Label atualizada: ${updatedUnits}/${totalUnits} centrais com status`);
 }
 
 window.updateStatusTabLabel = updateStatusTabLabel;
@@ -1347,6 +1374,7 @@ async function updateEventList() {
     } else if (currentTab === 'status') {
         const showArmed = document.getElementById('toggle-armed')?.checked ?? true;
         const showDisarmed = document.getElementById('toggle-disarmed')?.checked ?? true;
+        const showUnupdated = document.getElementById('toggle-unupdated')?.checked ?? false;
         
         const statusUnits = units.map(u => {
             const isep = String(u.value).toUpperCase().padStart(4, '0');
@@ -1368,25 +1396,23 @@ async function updateEventList() {
             };
         });
         
-        // Ordena por nome da unidade
         statusUnits.sort((a, b) => a.local.localeCompare(b.local));
 
-        // Filtro por armadas/desarmadas + não atualizadas
+        // ✅ FILTRO CORRIGIDO
         sourceEvents = statusUnits
             .filter(u => {
-                // Filtro de não atualizadas (inverte lógica)
-                if (!showUnupdated && !u.hasArmStatus) return false;
-                
-                // Se offline, sempre mostra
+                // Offline sempre aparece
                 if (u.status === 'offline') return true;
                 
-                // Se não tem status de arm/disarm, sempre mostra
-                if (!u.hasArmStatus) return true;
+                // Se NÃO tem status de arme/desarme
+                if (!u.hasArmStatus) {
+                    // Só aparece se "Não Atualizadas" estiver MARCADO
+                    return showUnupdated;
+                }
                 
-                // Filtra por estado
-                if (u.allArmed) return showArmed;
+                // Se TEM status, filtra por armada/desarmada
+                if (u.allArmed || u.partialArmed) return showArmed;
                 if (u.allDisarmed) return showDisarmed;
-                if (u.partialArmed) return showArmed;
                 
                 return true;
             })
@@ -1822,14 +1848,26 @@ function fetchClientStatus(idISEP) {
 function fetchAllPartitionsStatus() {
     if (!units || units.length === 0) return;
     
-    console.log('🔄 Buscando status de todas as centrais...');
+    const timestamp = new Date().toLocaleTimeString('pt-BR');
+    console.log(`🔍 [${timestamp}] Solicitando status de partições ao Viaweb`);
     statusUpdateStartTime = Date.now();
     updateStatusTabLabel();
+    
+    let requestCount = 0;
+    let skippedOffline = 0;
     
     units.forEach(unit => {
         const isep = String(unit.value).trim().toUpperCase().padStart(4, '0');
         if (!isValidISEP(isep)) return;
         
+        // ✅ Pula centrais offline
+        const cached = statusCache.get(isep);
+        if (cached && cached.status === 'offline') {
+            skippedOffline++;
+            return;
+        }
+        
+        requestCount++;
         const cmdId = generateCommandId();
         pendingCommands.set(cmdId, resp => handlePartitionStatusResponse(resp, isep));
         
@@ -1839,25 +1877,33 @@ function fetchAllPartitionsStatus() {
         
         sendCommand(cmd);
     });
+    
+    console.log(`📤 [${timestamp}] ${requestCount} comandos enviados (${skippedOffline} offline pulados)`);
 }
 
 function handlePartitionStatusResponse(resp, isep) {
+    const timestamp = new Date().toLocaleTimeString('pt-BR');
     const data = resp?.resposta;
-    if (!data || data.length === 0) return;
+    
+    if (!data || data.length === 0) {
+        console.log(`⚠️ [${timestamp}] ISEP ${isep}: resposta vazia`);
+        return;
+    }
     
     if (data[0]?.cmd === 'erro') {
+        console.log(`❌ [${timestamp}] ISEP ${isep}: erro na resposta`);
         return;
     }
     
     const totalPartitions = data.length;
     const armedCount = data.filter(p => p.armado === 1).length;
-    const disarmedCount = totalPartitions - armedCount;
+    
+    console.log(`✅ [${timestamp}] ISEP ${isep}: ${armedCount}/${totalPartitions} partições armadas`);
     
     let isArmed = false;
     let isPartial = false;
     let partialDetails = '';
     
-    // Lógica especial para ISEP finais 3
     if (shouldCheckPartialArmed(isep)) {
         const partitions34 = data.filter(p => p.pos === 3 || p.pos === 4);
         const armed34 = partitions34.filter(p => p.armado === 1).length;
@@ -1865,27 +1911,35 @@ function handlePartitionStatusResponse(resp, isep) {
         if (armed34 > 0 && armed34 < partitions34.length) {
             isPartial = true;
             const disarmedList = partitions34.filter(p => p.armado === 0).map(p => p.pos).join(', ');
-            partialDetails = `Partições 3/4 - Desarmadas: ${disarmedList}`;
+            partialDetails = `Desarmadas: ${disarmedList}`;
         } else if (armed34 === partitions34.length) {
             isArmed = true;
         }
     } else {
-        // Para outros ISEPs: se tiver pelo menos 1 armada, considera totalmente armada
         isArmed = armedCount > 0;
     }
 
-    const cached = statusCache.get(isep);
-    if (cached) {
-        cached.armed = isArmed || isPartial;
-        cached.disarmed = !isArmed && !isPartial;
-        cached.allArmed = isArmed;
-        cached.allDisarmed = !isArmed && !isPartial;
-        cached.partialArmed = isPartial;
-        cached.partialDetails = partialDetails;
+    // ✅ CORRIGIDO: Cria ou atualiza cache
+    let cached = statusCache.get(isep);
+    if (!cached) {
+        cached = { status: 'online', since: Date.now() };
+        statusCache.set(isep, cached);
     }
+    
+    cached.armed = isArmed || isPartial;
+    cached.disarmed = !isArmed && !isPartial;
+    cached.allArmed = isArmed;
+    cached.allDisarmed = !isArmed && !isPartial;
+    cached.partialArmed = isPartial;
+    cached.partialDetails = partialDetails;
 
     populateUnitSelect();
-    updateEventList();
+    
+    const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (currentTab === 'status') {
+        updateEventList();
+    }
+    
     updateStatusTabLabel();
 }
 
@@ -2178,7 +2232,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 document.getElementById('toggle-armed')?.addEventListener('change', () => updateEventList());
 document.getElementById('toggle-disarmed')?.addEventListener('change', () => updateEventList());
-document.getElementById('toggle-unupdated')?.addEventListener('change', (e) => {showUnupdated = e.target.checked; updateEventList(); });
+document.getElementById('toggle-unupdated')?.addEventListener('change', () => updateEventList());
 
 eventsFilter.addEventListener('input', () => updateEventList());
 
@@ -2406,35 +2460,17 @@ connectWebSocket();
 let statusUpdateInterval = null;
 let statusUpdateStartTime = null;
 
-// Filtros de status
-let showUnupdated = false;
-
 function startStatusAutoUpdate() {
     if (statusUpdateInterval) clearInterval(statusUpdateInterval);
     
+    console.log('🔄 Iniciando atualização automática de status (5min)');
+    
     statusUpdateInterval = setInterval(() => {
-        console.log('🔄 Atualizando status das centrais (background)...');
+        console.log('⏰ Timer disparado - atualizando status em background');
         fetchAllClientStatuses();
         setTimeout(() => fetchAllPartitionsStatus(), 2000);
     }, 300000); // 5 minutos
 }
-
-// Iniciar quando mudar para tab status
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (btn.dataset.tab === 'status') {
-                startStatusAutoUpdate();
-            } else {
-                if (statusUpdateInterval) {
-                    clearInterval(statusUpdateInterval);
-                    statusUpdateInterval = null;
-                }
-            }
-        });
-    });
-});
-
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
