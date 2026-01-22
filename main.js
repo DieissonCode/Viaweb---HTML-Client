@@ -1209,6 +1209,45 @@ function updateOfflineCount() {
 
 window.updateOfflineCount = updateOfflineCount;
 
+// Ordenação de tabela
+let currentSort = { column: null, ascending: true };
+
+function sortTable(columnIndex) {
+    const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (currentTab !== 'status') return;
+    
+    const rows = Array.from(eventList.querySelectorAll('.event-row'));
+    if (rows.length === 0) return;
+    
+    // Toggle direção se mesma coluna
+    if (currentSort.column === columnIndex) {
+        currentSort.ascending = !currentSort.ascending;
+    } else {
+        currentSort.column = columnIndex;
+        currentSort.ascending = true;
+    }
+    
+    rows.sort((a, b) => {
+        const aVal = a.cells[columnIndex]?.dataset.value || a.cells[columnIndex]?.textContent || '';
+        const bVal = b.cells[columnIndex]?.dataset.value || b.cells[columnIndex]?.textContent || '';
+        
+        const comparison = aVal.localeCompare(bVal, 'pt-BR', { numeric: true });
+        return currentSort.ascending ? comparison : -comparison;
+    });
+    
+    // Limpa e reinsere ordenado
+    eventList.innerHTML = '';
+    rows.forEach(row => eventList.appendChild(row));
+    
+    // Atualiza indicadores visuais
+    document.querySelectorAll('#events-table th').forEach((th, idx) => {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        if (idx === columnIndex) {
+            th.classList.add(currentSort.ascending ? 'sorted-asc' : 'sorted-desc');
+        }
+    });
+}
+
 // ---------- Filtro ----------
 function filterEvents(term) {
     const rows = eventList.querySelectorAll('.event-row');
@@ -1283,6 +1322,8 @@ async function updateEventList() {
         const statusUnits = units.map(u => {
             const isep = String(u.value).toUpperCase().padStart(4, '0');
             const cached = statusCache.get(isep);
+            const hasStatus = cached && cached.status;
+            
             return {
                 isep: u.value,
                 local: u.local,
@@ -1293,16 +1334,20 @@ async function updateEventList() {
                 allArmed: cached?.allArmed || false,
                 allDisarmed: cached?.allDisarmed || false,
                 partialArmed: cached?.partialArmed || false,
-                partialDetails: cached?.partialDetails || ''
+                partialDetails: cached?.partialDetails || '',
+                hasUpdate: hasStatus
             };
         });
         
         // Ordena por nome da unidade
-        statusUnits.sort((a, b) => b.local.localeCompare(a.local));
+        statusUnits.sort((a, b) => a.local.localeCompare(b.local));
 
-        // Filtro por armadas/desarmadas
+        // Filtro por armadas/desarmadas + não atualizadas
         sourceEvents = statusUnits
             .filter(u => {
+                // Filtro de não atualizadas
+                if (showUnupdated && u.hasUpdate) return false;
+                
                 // Se offline, sempre mostra
                 if (u.status === 'offline') return true;
                 
@@ -1312,7 +1357,7 @@ async function updateEventList() {
                 // Filtra por estado
                 if (u.allArmed) return showArmed;
                 if (u.allDisarmed) return showDisarmed;
-                if (u.partialArmed) return showArmed; // Parcial conta como armado
+                if (u.partialArmed) return showArmed;
                 
                 return true;
             })
@@ -1330,7 +1375,6 @@ async function updateEventList() {
     // Aplicar filtro de texto
     if (filterTerm) {
         filtered = filtered.filter(item => {
-            // Para closures
             if (item.closure) {
                 const c = item.closure;
                 const unit = units.find(u => String(u.value) === String(c.ISEP));
@@ -1339,7 +1383,6 @@ async function updateEventList() {
                 return searchText.includes(filterTerm);
             }
             
-            // Para offline
             if (item.offline) {
                 const u = item.offline;
                 const unit = units.find(un => String(un.value) === String(u.isep));
@@ -1348,7 +1391,6 @@ async function updateEventList() {
                 return searchText.includes(filterTerm);
             }
             
-            // Para status
             if (item.statusUnit) {
                 const u = item.statusUnit;
                 const statusText = u.status === 'offline' ? 'offline' : 'online';
@@ -1357,7 +1399,6 @@ async function updateEventList() {
                 return searchText.includes(filterTerm);
             }
             
-            // Para eventos normais ou groups
             const ev = item.group ? item.group.first : item;
             const unit = units.find(u => String(u.value) === String(ev.local || ev.clientId));
             const unitName = unit ? unit.local : '';
@@ -1366,9 +1407,9 @@ async function updateEventList() {
         });
     }
 
-    // Limitar exibição
-    const maxDisplayEvents = 100;
-    const displayEvents = filtered.slice(-maxDisplayEvents).reverse();
+    // SEM LIMITE para tab status
+    const maxDisplayEvents = currentTab === 'status' ? filtered.length : 100;
+    const displayEvents = currentTab === 'status' ? filtered : filtered.slice(-maxDisplayEvents).reverse();
 
     const tipos = {
         0: '[Horário Programado]',
@@ -1386,13 +1427,11 @@ async function updateEventList() {
     };
 
     displayEvents.forEach(item => {
-        // ✅ CORRIGIDO: contador baseado no tipo
         let ev, count = 1;
         
         if (item.group) {
             ev = item.group.first;
             
-            // ✅ Conta eventos específicos por tipo
             if (item.type === 'alarm') {
                 count = getAssociatedEventsForAlarm(item.group).length;
             } else if (item.type === 'pendente') {
@@ -1405,7 +1444,6 @@ async function updateEventList() {
             tr.className = 'event-row';
             tr.style.cursor = 'pointer';
             
-            // Aplicar cor baseada no tipo
             if (c.Tipo === 'alarm') tr.classList.add('alarm');
             else if (c.Tipo === 'pendente') tr.classList.add('falha');
             else if (c.Tipo === 'relatorio') tr.classList.add('armedisarm');
@@ -1419,11 +1457,10 @@ async function updateEventList() {
             const tipoClass = c.Tipo === 'alarm' ? 'closure-type-alarm' : c.Tipo === 'pendente' ? 'closure-type-pendente' : 'closure-type-relatorio';
             
             tr.innerHTML = `
-                <td>${getUnitDescription(c.ISEP)}</td>
+                <td data-value="${c.ISEP}">${getUnitDescription(c.ISEP)}</td>
                 <td>${date.toLocaleDateString('pt-BR')}</td>
                 <td>${date.toLocaleTimeString('pt-BR')}</td>
                 <td><span class="${tipoClass}">${tipoLabel}</span></td>
-                <td>${getPartitionName(c.Particao, c.ISEP)}</td>
                 <td>
                     <div class="closure-description">${c.Procedimento || c.Descricao} ${countBadge}</div>
                     <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">por ${c.ClosedByDisplay || c.ClosedBy}</div>
@@ -1440,10 +1477,9 @@ async function updateEventList() {
             const sinceDate = new Date(u.since);
             
             tr.innerHTML = `
-                <td>${getUnitDescription(u.isep)}</td>
+                <td data-value="${u.isep}">${getUnitDescription(u.isep)}</td>
                 <td>${sinceDate.toLocaleDateString('pt-BR')}</td>
                 <td>${sinceDate.toLocaleTimeString('pt-BR')}</td>
-                <td>-</td>
                 <td>-</td>
                 <td>Offline desde ${sinceDate.toLocaleString('pt-BR')}</td>
             `;
@@ -1452,8 +1488,8 @@ async function updateEventList() {
             const u = item.statusUnit;
             const tr = eventList.insertRow();
             tr.className = 'event-row';
+            tr.dataset.isep = u.isep;
             
-            // Classes visuais
             if (u.status === 'offline') {
                 tr.classList.add('offline');
             } else if (u.allArmed) {
@@ -1492,12 +1528,23 @@ async function updateEventList() {
             }
             
             tr.innerHTML = `
-                <td>${getUnitDescription(u.isep)}</td>
+                <td data-value="${u.isep}">${getUnitDescription(u.isep)}</td>
                 <td>${dataStatus}</td>
                 <td>${horaStatus}</td>
-                <td>${statusText}</td>
-                <td>${descricao}</td>
+                <td data-value="${u.status}">${statusText}</td>
+                <td data-value="${descricao}">${descricao}</td>
             `;
+            
+            tr.onclick = () => {
+                unitSearch.value = '';
+                populateUnitSelect();
+                const unit = units.find(un => String(un.value) === String(u.isep));
+                if (unit) {
+                    unitSelect.value = unit.value;
+                    unitSelect.dispatchEvent(new Event('change'));
+                }
+            };
+            
             return;
         } else {
             ev = item;
@@ -1559,7 +1606,7 @@ async function updateEventList() {
             userData = usersByIsep.find(u => Number(u.ID_USUARIO) === Number(zonaUsuario)) || null;
         }
 
-        tr.innerHTML = `<td>${getUnitDescription(ev.local || ev.clientId || 'N/A')}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}${lockInfo ? ' 🔒' : ''}</td>`;
+        tr.innerHTML = `<td data-value="${ev.local || ev.clientId || 'N/A'}">${getUnitDescription(ev.local || ev.clientId || 'N/A')}</td><td>${ev.data}</td><td>${ev.hora}</td><td>${complemento}</td><td>${partName}</td><td>${desc}${lockInfo ? ' 🔒' : ''}</td>`;
 
         if (userData) {
             let hoverTimer = null;
@@ -1583,7 +1630,7 @@ async function updateEventList() {
         };
     });
 
-    if (filtered.length > maxDisplayEvents) {
+    if (currentTab !== 'status' && filtered.length > maxDisplayEvents) {
         const infoRow = eventList.insertRow(0);
         infoRow.className = 'event-info';
         infoRow.innerHTML = `<td colspan="6">
@@ -1769,39 +1816,50 @@ function handlePartitionStatusResponse(resp, isep) {
     if (data[0]?.cmd === 'erro') {
         return;
     }
-    
-    // ✅ Lógica de armado/desarmado
+
     const totalPartitions = data.length;
     const armedCount = data.filter(p => p.armado === 1).length;
     const disarmedCount = totalPartitions - armedCount;
     
-    const isArmed = armedCount === totalPartitions;
-    const isPartial = armedCount > 0 && armedCount < totalPartitions;
-    
+    let isArmed = false;
+    let isPartial = false;
     let partialDetails = '';
-    if (isPartial) {
-        const armedList = data.filter(p => p.armado === 1).map(p => p.pos).join(', ');
-        partialDetails = `Armadas: ${armedList}`;
-    }
     
+    // Lógica especial para ISEP finais 3
+    if (shouldCheckPartialArmed(isep)) {
+        const partitions34 = data.filter(p => p.pos === 3 || p.pos === 4);
+        const armed34 = partitions34.filter(p => p.armado === 1).length;
+        
+        if (armed34 > 0 && armed34 < partitions34.length) {
+            isPartial = true;
+            const disarmedList = partitions34.filter(p => p.armado !== 1).map(p => p.pos).join(', ');
+            partialDetails = `Desarmadas: ${disarmedList}`;
+        } else if (armed34 === partitions34.length) {
+            isArmed = true;
+        }
+    } else {
+        // Para outros ISEPs: se tiver pelo menos 1 armada, considera totalmente armada
+        isArmed = armedCount > 0;
+    }
+
     const cached = statusCache.get(isep);
     if (cached) {
-        cached.armed = isArmed;
+        cached.armed = isArmed || isPartial;
         cached.disarmed = !isArmed && !isPartial;
         cached.allArmed = isArmed;
         cached.allDisarmed = !isArmed && !isPartial;
         cached.partialArmed = isPartial;
         cached.partialDetails = partialDetails;
     }
-    
-    // ✅ Atualiza visual do DDL sem resetar filtro
+
     populateUnitSelect();
-    
-    // ✅ Atualiza tab status se estiver ativa
-    const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-    if (currentTab === 'status') {
-        updateEventList();
-    }
+    updateEventList();
+}
+
+// Detecta se ISEP termina com 3 (parcial válido apenas nesses)
+function shouldCheckPartialArmed(isep) {
+    const lastChar = String(isep).slice(-1);
+    return lastChar === '3';
 }
 
 function handlePartitionsResponse(resp) {
@@ -2087,6 +2145,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 document.getElementById('toggle-armed')?.addEventListener('change', () => updateEventList());
 document.getElementById('toggle-disarmed')?.addEventListener('change', () => updateEventList());
+// Listener para checkbox de não atualizadas
+document.getElementById('toggle-unupdated')?.addEventListener('change', (e) => {
+    showUnupdated = e.target.checked;
+    updateEventList();
+});
 
 eventsFilter.addEventListener('input', () => updateEventList());
 
@@ -2313,15 +2376,17 @@ connectWebSocket();
 // Atualização automática de status a cada 30s
 let statusUpdateInterval = null;
 
+// Filtros de status
+let showUnupdated = false;
+
 function startStatusAutoUpdate() {
     if (statusUpdateInterval) clearInterval(statusUpdateInterval);
     
-    // ✅ Atualiza SEMPRE, independente da tab ativa
     statusUpdateInterval = setInterval(() => {
         console.log('🔄 Atualizando status das centrais (background)...');
         fetchAllClientStatuses();
         setTimeout(() => fetchAllPartitionsStatus(), 2000);
-    }, 15000);
+    }, 300000); // 5 minutos
 }
 
 // Iniciar quando mudar para tab status

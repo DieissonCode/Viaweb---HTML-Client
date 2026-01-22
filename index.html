@@ -304,15 +304,19 @@
                             <input type="checkbox" id="toggle-disarmed" checked>
                             <span>Desarmadas</span>
                         </label>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-unupdated">
+                            <span>Não Atualizadas</span>
+                        </label>
                     </div>
                     <table id="events-table">
                         <thead>
                             <tr>
-                                <th>Central (ISEP)</th>
+                                <th onclick="sortTable(0)" style="cursor:pointer">Central (ISEP) <span class="sort-indicator"></span></th>
                                 <th>Data Status</th>
                                 <th>Hora Status</th>
-                                <th>Status</th>
-                                <th>Descrição / Detalhes</th>
+                                <th onclick="sortTable(3)" style="cursor:pointer">Status <span class="sort-indicator"></span></th>
+                                <th onclick="sortTable(4)" style="cursor:pointer">Descrição / Detalhes <span class="sort-indicator"></span></th>
                             </tr>
                         </thead>
                         <tbody id="eventList"></tbody>

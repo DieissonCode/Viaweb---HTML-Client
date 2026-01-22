@@ -240,20 +240,13 @@
     #status-filters { display: flex; }
 
 /* Status das centrais - cores */
-.status-all-armed { 
-    background: rgba(16, 185, 129, 0.15); 
-    border-left: 4px solid #10b981; 
-}
-.status-all-disarmed { 
-    background: rgba(239, 68, 68, 0.15); 
-    border-left: 4px solid #ef4444; 
-}
-.status-partial-armed { 
-    background: rgba(245, 158, 11, 0.15); 
-    border-left: 4px solid #f59e0b; 
-}
+    .status-all-armed { background: rgba(16, 185, 129, 0.15); border-left: 4px solid #10b981; }
+    .status-all-disarmed { background: rgba(239, 68, 68, 0.15); border-left: 4px solid #ef4444; }
+    .status-partial-armed { background: rgba(245, 158, 11, 0.15); border-left: 4px solid #f59e0b; }
 /* Texto de status parcial com destaque */
-.event-row.status-partial-armed td:nth-child(5) { 
-    font-weight: 600; 
-    color: var(--warning); 
-}
+    .event-row.status-partial-armed td:nth-child(5) { font-weight: 600; color: var(--warning); }
+
+/* Indicadores de ordenação */
+    #events-table th.sorted-asc .sort-indicator::after { content: ' ▲'; color: var(--primary); }
+    #events-table th.sorted-desc .sort-indicator::after { content: ' ▼'; color: var(--primary); }
+    #events-table th .sort-indicator { display: inline-block; width: 12px; }
