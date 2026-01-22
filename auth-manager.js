@@ -52,6 +52,13 @@ class AuthManager {
             this.clearError();
             this.usernameInput.value = '';
             this.passwordInput.value = '';
+            
+            // ✅ Pausa atualização automática de status
+            if (window.statusUpdateInterval) {
+                clearInterval(window.statusUpdateInterval);
+                window.statusUpdateInterval = null;
+                console.log('⏸️ Auto-update pausado durante login');
+            }
         }
     }
 
@@ -59,6 +66,14 @@ class AuthManager {
         if (this.overlay) {
             this.overlay.style.display = 'none';
             this.clearError();
+            
+            // ✅ Retoma atualização automática de status
+            if (this.currentUser) {
+                console.log('▶️ Retomando auto-update após login');
+                if (typeof startStatusAutoUpdate === 'function') {
+                    startStatusAutoUpdate();
+                }
+            }
         }
     }
 

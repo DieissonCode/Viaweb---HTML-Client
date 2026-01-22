@@ -1644,16 +1644,18 @@ function selectClientFromEvent(ev) {
 
 // ---------- Envio de comandos ----------
 function sendCommand(data) {
-    if (!currentUser) {
+    // ✅ Comandos de status são sempre permitidos (mesmo sem login)
+    const isStatusCommand = data?.oper?.[0]?.acao === 'listarClientes' || 
+                           data?.oper?.[0]?.comando?.[0]?.cmd === 'particoes';
+    
+    if (!currentUser && !isStatusCommand) {
         console.warn('❌ Comando bloqueado: usuário não autenticado');
         authManager?.show?.();
         return false;
     }
 
-    // ---- NOVO BLOQUEIO ----
-    if (readOnly) {
+    if (readOnly && !isStatusCommand) {
         console.warn('❌ Comando bloqueado: sessão somente‑leitura');
-        // Opcional: exibir toast/alert rápido
         alert('⚠️ Você está em modo somente‑leitura e não pode enviar comandos.');
         return false;
     }
@@ -1768,7 +1770,19 @@ function handlePartitionStatusResponse(resp, isep) {
         return;
     }
     
-    // ... [código existente da lógica de partições] ...
+    // ✅ Lógica de armado/desarmado
+    const totalPartitions = data.length;
+    const armedCount = data.filter(p => p.armado === 1).length;
+    const disarmedCount = totalPartitions - armedCount;
+    
+    const isArmed = armedCount === totalPartitions;
+    const isPartial = armedCount > 0 && armedCount < totalPartitions;
+    
+    let partialDetails = '';
+    if (isPartial) {
+        const armedList = data.filter(p => p.armado === 1).map(p => p.pos).join(', ');
+        partialDetails = `Armadas: ${armedList}`;
+    }
     
     const cached = statusCache.get(isep);
     if (cached) {
