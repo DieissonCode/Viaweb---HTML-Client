@@ -983,7 +983,7 @@ function isValidISEP(idISEP) {
         fetchAllClientStatuses();
         setTimeout(() => {
             fetchAllPartitionsStatus();
-            startStatusAutoUpdate(); // Inicia loop de 30s
+            startStatusAutoUpdate();
         }, 2000);
         
     } catch (err) { 
@@ -1209,6 +1209,27 @@ function updateOfflineCount() {
 
 window.updateOfflineCount = updateOfflineCount;
 
+// Atualiza label da tab de status
+function updateStatusTabLabel() {
+    const statusTab = document.querySelector('.tab-btn[data-tab="status"]');
+    if (!statusTab) return;
+    
+    const totalUnits = units.length;
+    const updatedUnits = Array.from(statusCache.values()).filter(s => 
+        s.armed || s.disarmed || s.allArmed || s.allDisarmed || s.partialArmed
+    ).length;
+    
+    let timeLabel = '';
+    if (statusUpdateStartTime) {
+        const date = new Date(statusUpdateStartTime);
+        timeLabel = ` - ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}`;
+    }
+    
+    statusTab.textContent = `Status Centrais - ${updatedUnits}/${totalUnits}${timeLabel}`;
+}
+
+window.updateStatusTabLabel = updateStatusTabLabel;
+
 // Ordenação de tabela
 let currentSort = { column: null, ascending: true };
 
@@ -1228,8 +1249,16 @@ function sortTable(columnIndex) {
     }
     
     rows.sort((a, b) => {
-        const aVal = a.cells[columnIndex]?.dataset.value || a.cells[columnIndex]?.textContent || '';
-        const bVal = b.cells[columnIndex]?.dataset.value || b.cells[columnIndex]?.textContent || '';
+        let aVal, bVal;
+        
+        // Coluna 0 (Central) - ordena pelo nome, não pelo ISEP
+        if (columnIndex === 0) {
+            aVal = a.cells[0]?.textContent.split('(')[0].trim() || '';
+            bVal = b.cells[0]?.textContent.split('(')[0].trim() || '';
+        } else {
+            aVal = a.cells[columnIndex]?.dataset.value || a.cells[columnIndex]?.textContent || '';
+            bVal = b.cells[columnIndex]?.dataset.value || b.cells[columnIndex]?.textContent || '';
+        }
         
         const comparison = aVal.localeCompare(bVal, 'pt-BR', { numeric: true });
         return currentSort.ascending ? comparison : -comparison;
@@ -1322,7 +1351,7 @@ async function updateEventList() {
         const statusUnits = units.map(u => {
             const isep = String(u.value).toUpperCase().padStart(4, '0');
             const cached = statusCache.get(isep);
-            const hasStatus = cached && cached.status;
+            const hasArmStatus = cached && (cached.armed || cached.disarmed || cached.allArmed || cached.allDisarmed || cached.partialArmed);
             
             return {
                 isep: u.value,
@@ -1335,7 +1364,7 @@ async function updateEventList() {
                 allDisarmed: cached?.allDisarmed || false,
                 partialArmed: cached?.partialArmed || false,
                 partialDetails: cached?.partialDetails || '',
-                hasUpdate: hasStatus
+                hasArmStatus: hasArmStatus
             };
         });
         
@@ -1345,14 +1374,14 @@ async function updateEventList() {
         // Filtro por armadas/desarmadas + não atualizadas
         sourceEvents = statusUnits
             .filter(u => {
-                // Filtro de não atualizadas
-                if (showUnupdated && u.hasUpdate) return false;
+                // Filtro de não atualizadas (inverte lógica)
+                if (!showUnupdated && !u.hasArmStatus) return false;
                 
                 // Se offline, sempre mostra
                 if (u.status === 'offline') return true;
                 
-                // Se desconhecido, sempre mostra
-                if (!u.armed && !u.disarmed && !u.partialArmed) return true;
+                // Se não tem status de arm/disarm, sempre mostra
+                if (!u.hasArmStatus) return true;
                 
                 // Filtra por estado
                 if (u.allArmed) return showArmed;
@@ -1789,10 +1818,13 @@ function fetchClientStatus(idISEP) {
         : { oper: [{ id: cmdId, acao: "listarClientes", idISEP: [isepFormatted] }] };
     sendCommand(cmd);
 }
+
 function fetchAllPartitionsStatus() {
     if (!units || units.length === 0) return;
     
     console.log('🔄 Buscando status de todas as centrais...');
+    statusUpdateStartTime = Date.now();
+    updateStatusTabLabel();
     
     units.forEach(unit => {
         const isep = String(unit.value).trim().toUpperCase().padStart(4, '0');
@@ -1816,7 +1848,7 @@ function handlePartitionStatusResponse(resp, isep) {
     if (data[0]?.cmd === 'erro') {
         return;
     }
-
+    
     const totalPartitions = data.length;
     const armedCount = data.filter(p => p.armado === 1).length;
     const disarmedCount = totalPartitions - armedCount;
@@ -1832,8 +1864,8 @@ function handlePartitionStatusResponse(resp, isep) {
         
         if (armed34 > 0 && armed34 < partitions34.length) {
             isPartial = true;
-            const disarmedList = partitions34.filter(p => p.armado !== 1).map(p => p.pos).join(', ');
-            partialDetails = `Desarmadas: ${disarmedList}`;
+            const disarmedList = partitions34.filter(p => p.armado === 0).map(p => p.pos).join(', ');
+            partialDetails = `Partições 3/4 - Desarmadas: ${disarmedList}`;
         } else if (armed34 === partitions34.length) {
             isArmed = true;
         }
@@ -1854,6 +1886,7 @@ function handlePartitionStatusResponse(resp, isep) {
 
     populateUnitSelect();
     updateEventList();
+    updateStatusTabLabel();
 }
 
 // Detecta se ISEP termina com 3 (parcial válido apenas nesses)
@@ -2145,11 +2178,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 document.getElementById('toggle-armed')?.addEventListener('change', () => updateEventList());
 document.getElementById('toggle-disarmed')?.addEventListener('change', () => updateEventList());
-// Listener para checkbox de não atualizadas
-document.getElementById('toggle-unupdated')?.addEventListener('change', (e) => {
-    showUnupdated = e.target.checked;
-    updateEventList();
-});
+document.getElementById('toggle-unupdated')?.addEventListener('change', (e) => {showUnupdated = e.target.checked; updateEventList(); });
 
 eventsFilter.addEventListener('input', () => updateEventList());
 
@@ -2373,8 +2402,9 @@ window.addEventListener('beforeunload', () => {
 
 connectWebSocket();
 
-// Atualização automática de status a cada 30s
+// Status update control
 let statusUpdateInterval = null;
+let statusUpdateStartTime = null;
 
 // Filtros de status
 let showUnupdated = false;

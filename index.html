@@ -295,7 +295,7 @@
                         <button class="tab-btn" data-tab="status">Status Centrais</button>
                         <button class="tab-btn" data-tab="offline">Offline (<span id="offline-count">0</span>)</button>
                     </div>
-                    <div id="status-filters" style="display:none; gap:12px; margin-top:8px;">
+                    <div id="status-filters" style="display:none; gap:12px; margin-top:8px; align-items:center;">
                         <label class="toggle-label">
                             <input type="checkbox" id="toggle-armed" checked>
                             <span>Armadas</span>
@@ -305,9 +305,10 @@
                             <span>Desarmadas</span>
                         </label>
                         <label class="toggle-label">
-                            <input type="checkbox" id="toggle-unupdated">
+                            <input type="checkbox" id="toggle-unutdated">
                             <span>Não Atualizadas</span>
                         </label>
+                        <span id="status-counter" style="font-size:13px;color:var(--text-secondary);margin-left:auto;"></span>
                     </div>
                     <table id="events-table">
                         <thead>
@@ -316,7 +317,7 @@
                                 <th>Data Status</th>
                                 <th>Hora Status</th>
                                 <th onclick="sortTable(3)" style="cursor:pointer">Status <span class="sort-indicator"></span></th>
-                                <th onclick="sortTable(4)" style="cursor:pointer">Descrição / Detalhes <span class="sort-indicator"></span></th>
+                                <th>Descrição / Detalhes</th>
                             </tr>
                         </thead>
                         <tbody id="eventList"></tbody>

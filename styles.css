@@ -237,7 +237,7 @@
     .toggle-label input[type="checkbox"]:checked { background: var(--success); border-color: var(--success); }
     .toggle-label input[type="checkbox"]::before { content: ''; position: absolute; width: 14px; height: 14px; background: white; border-radius: 50%; top: 1px; left: 1px; transition: .3s; }
     .toggle-label input[type="checkbox"]:checked::before { left: 19px; }
-    #status-filters { display: flex; }
+    #status-filters { display: flex; align-items: center; }
 
 /* Status das centrais - cores */
     .status-all-armed { background: rgba(16, 185, 129, 0.15); border-left: 4px solid #10b981; }
