@@ -1374,12 +1374,10 @@ async function updateEventList() {
     } else if (currentTab === 'status') {
         const showArmed = document.getElementById('toggle-armed')?.checked ?? true;
         const showDisarmed = document.getElementById('toggle-disarmed')?.checked ?? true;
-        const showUnupdated = document.getElementById('toggle-unupdated')?.checked ?? false;
         
         const statusUnits = units.map(u => {
             const isep = String(u.value).toUpperCase().padStart(4, '0');
             const cached = statusCache.get(isep);
-            const hasArmStatus = cached && (cached.armed || cached.disarmed || cached.allArmed || cached.allDisarmed || cached.partialArmed);
             
             return {
                 isep: u.value,
@@ -1392,29 +1390,22 @@ async function updateEventList() {
                 allDisarmed: cached?.allDisarmed || false,
                 partialArmed: cached?.partialArmed || false,
                 partialDetails: cached?.partialDetails || '',
-                hasArmStatus: hasArmStatus
+                hasArmStatus: !!(cached && (cached.armed || cached.disarmed || cached.allArmed || cached.allDisarmed || cached.partialArmed))
             };
         });
         
         statusUnits.sort((a, b) => a.local.localeCompare(b.local));
 
-        // ✅ FILTRO CORRIGIDO
+        // Filtro: offline sempre aparece, para o resto aplica filtro arme/desarme
         sourceEvents = statusUnits
             .filter(u => {
-                // Offline sempre aparece
                 if (u.status === 'offline') return true;
                 
-                // Se NÃO tem status de arme/desarme
-                if (!u.hasArmStatus) {
-                    // Só aparece se "Não Atualizadas" estiver MARCADO
-                    return showUnupdated;
-                }
-                
-                // Se TEM status, filtra por armada/desarmada
                 if (u.allArmed || u.partialArmed) return showArmed;
                 if (u.allDisarmed) return showDisarmed;
                 
-                return true;
+                // Sem status definido, aparece se pelo menos um filtro estiver ativo
+                return showArmed || showDisarmed;
             })
             .map(u => ({ statusUnit: u, type: 'status' }));
     } else if (currentTab === 'offline') {
@@ -1427,7 +1418,7 @@ async function updateEventList() {
 
     let filtered = sourceEvents;
 
-    // Aplicar filtro de texto
+    // Aplicar filtro de texto (padrão "começo%")
     if (filterTerm) {
         filtered = filtered.filter(item => {
             if (item.closure) {
@@ -1435,7 +1426,7 @@ async function updateEventList() {
                 const unit = units.find(u => String(u.value) === String(c.ISEP));
                 const unitName = unit ? unit.local : '';
                 const searchText = `${c.ISEP} ${unitName} ${c.Tipo} ${c.Procedimento} ${c.Descricao} ${c.ClosedBy}`.toLowerCase();
-                return searchText.includes(filterTerm);
+                return searchText.startsWith(filterTerm);
             }
             
             if (item.offline) {
@@ -1443,7 +1434,7 @@ async function updateEventList() {
                 const unit = units.find(un => String(un.value) === String(u.isep));
                 const unitName = unit ? unit.local : '';
                 const searchText = `${u.isep} ${unitName} offline`.toLowerCase();
-                return searchText.includes(filterTerm);
+                return searchText.startsWith(filterTerm);
             }
             
             if (item.statusUnit) {
@@ -1451,14 +1442,14 @@ async function updateEventList() {
                 const statusText = u.status === 'offline' ? 'offline' : 'online';
                 const armText = u.allArmed ? 'armada' : u.allDisarmed ? 'desarmada' : u.partialArmed ? 'parcial' : '';
                 const searchText = `${u.isep} ${u.local} ${statusText} ${armText}`.toLowerCase();
-                return searchText.includes(filterTerm);
+                return searchText.startsWith(filterTerm);
             }
             
             const ev = item.group ? item.group.first : item;
             const unit = units.find(u => String(u.value) === String(ev.local || ev.clientId));
             const unitName = unit ? unit.local : '';
             const searchText = `${ev.local} ${unitName} ${ev.descricao} ${ev.data} ${ev.hora} ${ev.complemento}`.toLowerCase();
-            return searchText.includes(filterTerm);
+            return searchText.startsWith(filterTerm);
         });
     }
 
@@ -2232,7 +2223,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 document.getElementById('toggle-armed')?.addEventListener('change', () => updateEventList());
 document.getElementById('toggle-disarmed')?.addEventListener('change', () => updateEventList());
-document.getElementById('toggle-unupdated')?.addEventListener('change', () => updateEventList());
 
 eventsFilter.addEventListener('input', () => updateEventList());
 
