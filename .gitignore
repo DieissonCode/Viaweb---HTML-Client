@@ -11,4 +11,4 @@ tests/
 *.log
 *.svg
 .env
-
+debug.js
