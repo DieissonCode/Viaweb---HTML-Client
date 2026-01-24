@@ -1,4 +1,5 @@
-﻿﻿﻿const mssql = require('mssql');
+﻿﻿const DEBUG_LOGS_REPO = 0; // 1 = ENABLED | 2 = DISABLED
+const mssql = require('mssql');
 
 // Simple in‑memory cache for deduplication (5 min TTL)
     const DEDUPE_TTL_MS = 5 * 60 * 1000;
@@ -31,7 +32,7 @@ function toDateGmt3(rawTs) {
     if (rawTs == null) return new Date();
     const num = Number(rawTs);
     if (!Number.isFinite(num)) {
-        console.warn('[logs-repo] ⚠️ Invalid timestamp:', rawTs);
+        DEBUG_LOGS_REPO && console.warn('[logs-repo] ⚠️ Invalid timestamp:', rawTs);
         return new Date();
     }
     // If the value looks like seconds, multiply by 1000
@@ -41,7 +42,7 @@ function toDateGmt3(rawTs) {
 // Format a Date as a SQL‑compatible string (yyyy‑MM‑dd HH:mm:ss.SSS)
 function formatDateTimeSql(dateObj) {
     if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
-        console.warn('[logs-repo] ⚠️ Invalid Date object, using now');
+        DEBUG_LOGS_REPO && console.warn('[logs-repo] ⚠️ Invalid Date object, using now');
         dateObj = new Date();
     }
     const pad = (n, w = 2) => String(n).padStart(w, '0');
@@ -57,11 +58,11 @@ function formatDateTimeSql(dateObj) {
 
 /* ---------- Logging helpers ---------- */
 function logDebug(step, payload) {
-    // console.log(`[logs-repo] ${step}:`, payload);
+    // DEBUG_LOGS_REPO && console.log(`[logs-repo] ${step}:`, payload);
 }
 
 function logQuery(step, sql, params) {
-    // console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
+    // DEBUG_LOGS_REPO && console.log(`[logs-repo] QUERY ${step}:\n${sql.trim()}\nPARAMS:`, params);
 }
 
 /* ---------- Description normalizer ---------- */

@@ -1,4 +1,6 @@
 ﻿// auth-manager.js - Gerenciador de autenticação
+DEBUG_AUTH = 0; // 1 = ATIVADO | 2 = DESATIVADO
+
 class AuthManager {
     constructor() {
         this.currentUser = null;
@@ -57,7 +59,7 @@ class AuthManager {
             if (window.statusUpdateInterval) {
                 clearInterval(window.statusUpdateInterval);
                 window.statusUpdateInterval = null;
-                console.log('⏸️ Auto-update pausado durante login');
+                DEBUG_AUTH && console.log('⏸️ Auto-update pausado durante login');
             }
         }
     }
@@ -69,7 +71,7 @@ class AuthManager {
             
             // ✅ Retoma atualização automática de status
             if (this.currentUser) {
-                console.log('▶️ Retomando auto-update após login');
+                DEBUG_AUTH && console.log('▶️ Retomando auto-update após login');
                 if (typeof startStatusAutoUpdate === 'function') {
                     startStatusAutoUpdate();
                 }
@@ -119,12 +121,12 @@ class AuthManager {
                 this.saveSession();
                 this.renderUser();
                 this.hide();
-                console.log('✅ Login realizado:', this.currentUser.displayName);
+                DEBUG_AUTH && console.log('✅ Login realizado:', this.currentUser.displayName);
             } else {
                 this.showError(data.error || 'Credenciais inválidas');
             }
         } catch (err) {
-            console.error('❌ Erro no login:', err);
+            DEBUG_AUTH && console.error('❌ Erro no login:', err);
             this.showError('Erro ao conectar com servidor');
         } finally {
             this.submitBtn.disabled = false;
@@ -136,7 +138,7 @@ class AuthManager {
         this.currentUser = null;
         this.clearSession();
         this.renderUser();
-        console.log('🚪 Logout realizado');
+        DEBUG_AUTH && console.log('🚪 Logout realizado');
     }
 
     renderUser() {
@@ -166,7 +168,7 @@ class AuthManager {
         try {
             sessionStorage.setItem('viawebUser', JSON.stringify(this.currentUser));
         } catch (err) {
-            console.error('❌ Erro ao salvar sessão:', err);
+            DEBUG_AUTH && console.error('❌ Erro ao salvar sessão:', err);
         }
     }
 
@@ -174,7 +176,7 @@ class AuthManager {
         try {
             sessionStorage.removeItem('viawebUser');
         } catch (err) {
-            console.error('❌ Erro ao limpar sessão:', err);
+            DEBUG_AUTH && console.error('❌ Erro ao limpar sessão:', err);
         }
     }
 
@@ -184,10 +186,10 @@ class AuthManager {
             if (saved) {
                 this.currentUser = JSON.parse(saved);
                 this.renderUser();
-                console.log('✅ Sessão restaurada:', this.currentUser.displayName);
+                DEBUG_AUTH && console.log('✅ Sessão restaurada:', this.currentUser.displayName);
             }
         } catch (err) {
-            console.error('❌ Erro ao restaurar sessão:', err);
+            DEBUG_AUTH && console.error('❌ Erro ao restaurar sessão:', err);
             this.clearSession();
         }
     }
