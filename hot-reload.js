@@ -1,4 +1,6 @@
-﻿class HotReload {
+﻿DEBUG_HOT_RELOAD = 0 // 1 = ATIVADO | 2 = DESATIVADO
+
+class HotReload {
     constructor(checkInterval = 2000) {
     this.checkInterval = checkInterval;
     this.lastModified = null;
@@ -20,7 +22,7 @@
     }
 
     init() {
-        console.log('🔄 Hot Reload ativado');
+        DEBUG_HOT_RELOAD && console.log('🔄 Hot Reload ativado');
         this.checkForUpdates();
         setInterval(() => this.checkForUpdates(), this.checkInterval);
         window.addEventListener('beforeunload', () => this.saveState());
@@ -38,7 +40,7 @@
             if (this.lastModified === null) {
                 this.lastModified = lastMod;
             } else if (lastMod !== this.lastModified) {
-                console.log('🔄 Mudança detectada no HTML');
+                DEBUG_HOT_RELOAD && console.log('🔄 Mudança detectada no HTML');
                 this.lastModified = lastMod;
                 await this.reload();
                 return;
@@ -55,7 +57,7 @@
                 if (!this.jsLastMod.has(file)) {
                     this.jsLastMod.set(file, jsLastMod);
                 } else if (this.jsLastMod.get(file) !== jsLastMod) {
-                    console.log(`🔄 Mudança detectada em ${file}`);
+                    DEBUG_HOT_RELOAD && console.log(`🔄 Mudança detectada em ${file}`);
                     this.jsLastMod.set(file, jsLastMod);
                     await this.reload();
                     return;
@@ -74,7 +76,7 @@
                 if (!this.cssLastMod.has(file)) {
                     this.cssLastMod.set(file, cssLastMod);
                 } else if (this.cssLastMod.get(file) !== cssLastMod) {
-                    console.log(`🔄 Mudança detectada em ${file}`);
+                    DEBUG_HOT_RELOAD && console.log(`🔄 Mudança detectada em ${file}`);
                     this.cssLastMod.set(file, cssLastMod);
                     await this.reload();
                     return;
@@ -96,9 +98,9 @@
             };
             
             sessionStorage.setItem('viawebState', JSON.stringify(state));
-            console.log('💾 Estado salvo (sem eventos)');
+            DEBUG_HOT_RELOAD && console.log('💾 Estado salvo (sem eventos)');
         } catch (err) {
-            console.error('❌ Erro ao salvar estado:', err);
+            DEBUG_HOT_RELOAD && console.error('❌ Erro ao salvar estado:', err);
         }
     }
 
@@ -144,11 +146,11 @@
             if (window.updateCounts) window.updateCounts();
             if (window.updateEventList) window.updateEventList();
 
-            console.log('✅ Estado restaurado (sem eventos)');
+            DEBUG_HOT_RELOAD && console.log('✅ Estado restaurado (sem eventos)');
             sessionStorage.removeItem('viawebState');
             return true;
         } catch (err) {
-            console.error('❌ Erro ao restaurar estado:', err);
+            DEBUG_HOT_RELOAD && console.error('❌ Erro ao restaurar estado:', err);
             return false;
         }
     }
@@ -157,7 +159,7 @@
         if (this.isReloading) return;
         this.isReloading = true;
 
-        console.log('🔄 Recarregando página...');
+        DEBUG_HOT_RELOAD && console.log('🔄 Recarregando página...');
         this.saveState();
         await new Promise(resolve => setTimeout(resolve, 100));
         window.location.reload();

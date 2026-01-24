@@ -1,4 +1,6 @@
-// users-db.js - User management (global pattern, no ESM)
+﻿// users-db.js - User management (global pattern, no ESM)
+const DEBUG_USERS = 0; // 1 = ATIVADO | 2 = DESATIVADO
+
 (function() {
     'use strict';
     
@@ -13,7 +15,7 @@
 
     const API_URL = '/api/users';
 
-    console.log(`🔗 API de usuários configurada para: ${API_URL}`);
+    DEBUG_USERS && console.log(`🔗 API de usuários configurada para: ${API_URL}`);
 
     // ========================================
     // PERSISTÊNCIA (localStorage)
@@ -21,7 +23,7 @@
     function saveToLocalStorage() {
         try {
             if (!cachedUsers || cachedUsers.length === 0) {
-                console.warn('⚠️ Tentativa de salvar cache vazio - IGNORADO');
+                DEBUG_USERS && console.warn('⚠️ Tentativa de salvar cache vazio - IGNORADO');
                 return;
             }
             
@@ -40,12 +42,12 @@
             localStorage.setItem(CACHE_KEY, jsonStr);
             localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
             
-            console.log(`✅ Cache salvo: ${minimal.length} usuários (${sizeKB} KB)`);
+            DEBUG_USERS && console.log(`✅ Cache salvo: ${minimal.length} usuários (${sizeKB} KB)`);
         } catch (e) {
-            console.error('❌ Falha ao salvar cache:', e.message);
+            DEBUG_USERS && console.error('❌ Falha ao salvar cache:', e.message);
             
             if (e.name === 'QuotaExceededError') {
-                console.warn('💾 Espaço insuficiente, limpando localStorage...');
+                DEBUG_USERS && console.warn('💾 Espaço insuficiente, limpando localStorage...');
                 localStorage.clear();
                 try {
                     const minimal = cachedUsers.map(u => ({
@@ -57,9 +59,9 @@
                     }));
                     localStorage.setItem(CACHE_KEY, JSON.stringify(minimal));
                     localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
-                    console.log('✅ Cache salvo após limpeza');
+                    DEBUG_USERS && console.log('✅ Cache salvo após limpeza');
                 } catch (e2) {
-                    console.error('❌ Falha mesmo após limpeza:', e2.message);
+                    DEBUG_USERS && console.error('❌ Falha mesmo após limpeza:', e2.message);
                 }
             }
         }
@@ -71,14 +73,14 @@
             const ts = localStorage.getItem(CACHE_TS_KEY);
             
             if (!saved) {
-                console.log('ℹ️ Nenhum cache encontrado no localStorage');
+                DEBUG_USERS && console.log('ℹ️ Nenhum cache encontrado no localStorage');
                 return false;
             }
             
             const parsed = JSON.parse(saved);
             
             if (!Array.isArray(parsed) || parsed.length === 0) {
-                console.warn('⚠️ Cache inválido ou vazio:', parsed?.length || 0);
+                DEBUG_USERS && console.warn('⚠️ Cache inválido ou vazio:', parsed?.length || 0);
                 localStorage.removeItem(CACHE_KEY);
                 localStorage.removeItem(CACHE_TS_KEY);
                 return false;
@@ -87,10 +89,10 @@
             cachedUsers = parsed;
             cacheTimestamp = parseInt(ts) || Date.now();
             buildIndexes();
-            console.log(`✅ ${cachedUsers.length} usuários carregados do localStorage`);
+            DEBUG_USERS && console.log(`✅ ${cachedUsers.length} usuários carregados do localStorage`);
             return true;
         } catch (e) {
-            console.error('❌ Falha ao carregar cache:', e);
+            DEBUG_USERS && console.error('❌ Falha ao carregar cache:', e);
             localStorage.removeItem(CACHE_KEY);
             localStorage.removeItem(CACHE_TS_KEY);
         }
@@ -123,7 +125,7 @@
             }
         });
         
-        console.log(`📊 Índices: ${usersByMatricula.size} IDs, ${usersByIsep.size} ISEPs`);
+        DEBUG_USERS && console.log(`📊 Índices: ${usersByMatricula.size} IDs, ${usersByIsep.size} ISEPs`);
     }
 
     // ========================================
@@ -134,7 +136,7 @@
         if (!cachedUsers || cachedUsers.length === 0) {
             const loaded = loadFromLocalStorage();
             if (loaded && cachedUsers && cachedUsers.length > 0) {
-                console.log(`✅ ${cachedUsers.length} usuários carregados (boot)`);
+                DEBUG_USERS && console.log(`✅ ${cachedUsers.length} usuários carregados (boot)`);
             }
         }
         
@@ -142,14 +144,14 @@
         if (!forceRefresh && cachedUsers && cachedUsers.length > 0 && cacheTimestamp) {
             const now = Date.now();
             if (now - cacheTimestamp < CACHE_DURATION) {
-                console.log(`📦 Cache OK: ${cachedUsers.length} usuários`);
+                DEBUG_USERS && console.log(`📦 Cache OK: ${cachedUsers.length} usuários`);
                 return cachedUsers;
             }
         }
         
         // 3. Busca da API
         try {
-            console.log('🔍 Buscando da API...');
+            DEBUG_USERS && console.log('🔍 Buscando da API...');
             const response = await fetch(API_URL);
             
             if (!response.ok) {
@@ -158,7 +160,7 @@
             
             const result = await response.json();
             
-            console.log('📥 API:', {
+            DEBUG_USERS && console.log('📥 API:', {
                 success: result.success,
                 count: result.data?.length || 0
             });
@@ -168,21 +170,21 @@
                 cacheTimestamp = Date.now();
                 buildIndexes();
                 saveToLocalStorage();
-                console.log(`✅ ${cachedUsers.length} usuários da API`);
+                DEBUG_USERS && console.log(`✅ ${cachedUsers.length} usuários da API`);
                 return cachedUsers;
             } else {
                 if (cachedUsers && cachedUsers.length > 0) {
-                    console.warn(`⚠️ API vazia, mantendo ${cachedUsers.length} do cache`);
+                    DEBUG_USERS && console.warn(`⚠️ API vazia, mantendo ${cachedUsers.length} do cache`);
                     return cachedUsers;
                 } else {
-                    console.error('❌ API vazia e sem cache!');
+                    DEBUG_USERS && console.error('❌ API vazia e sem cache!');
                     return [];
                 }
             }
         } catch (err) {
-            console.error('❌ Erro API:', err.message);
+            DEBUG_USERS && console.error('❌ Erro API:', err.message);
             if (cachedUsers && cachedUsers.length > 0) {
-                console.warn(`⚠️ Erro, usando ${cachedUsers.length} do cache`);
+                DEBUG_USERS && console.warn(`⚠️ Erro, usando ${cachedUsers.length} do cache`);
                 return cachedUsers;
             }
             return [];
@@ -255,7 +257,7 @@
         usersByIsep.clear();
         localStorage.removeItem(CACHE_KEY);
         localStorage.removeItem(CACHE_TS_KEY);
-        console.log('🗑️ Cache limpo');
+        DEBUG_USERS && console.log('🗑️ Cache limpo');
     }
 
     function getUsersStats() {

@@ -1,4 +1,6 @@
 ﻿// units-db.js - Browser-compatible global module (no ESM)
+const DEBUG_UNITS = 0; // 1 = ATIVADO | 2 = DESATIVADO
+
 (function() {
     'use strict';
     
@@ -9,19 +11,19 @@
     // API na mesma porta do HTTP (80)
     const API_URL = '/api/units';  // ← URL RELATIVA!
 
-    console.log(`🔗 API configurada para: ${API_URL}`);
+    DEBUG_UNITS && console.log(`🔗 API configurada para: ${API_URL}`);
 
     async function getUnits(forceRefresh = false) {
         if (!forceRefresh && cachedUnits && cacheTimestamp) {
             const now = Date.now();
             if (now - cacheTimestamp < CACHE_DURATION) {
-                console.log('📦 Usando unidades em cache');
+                DEBUG_UNITS && console.log('📦 Usando unidades em cache');
                 return cachedUnits;
             }
         }
 
         try {
-            console.log('🔍 Buscando unidades da API...');
+            DEBUG_UNITS && console.log('🔍 Buscando unidades da API...');
             const response = await fetch(API_URL);
             
             if (!response.ok) {
@@ -40,18 +42,18 @@
                 .sort((a, b) => a.local.localeCompare(b.local)); // Ordena por nome
                 
                 cacheTimestamp = Date.now();
-                console.log(`✅ ${cachedUnits.length} unidades carregadas da API`);
+                DEBUG_UNITS && console.log(`✅ ${cachedUnits.length} unidades carregadas da API`);
                 return cachedUnits;
             } else {
                 throw new Error('Formato de resposta inválido');
             }
         } catch (err) {
-            console.error('❌ Erro ao buscar unidades:', err);
+            DEBUG_UNITS && console.error('❌ Erro ao buscar unidades:', err);
             if (cachedUnits) {
-                console.log('⚠️ Usando cache antigo devido a erro');
+                DEBUG_UNITS && console.log('⚠️ Usando cache antigo devido a erro');
                 return cachedUnits;
             }
-            console.log('⚠️ Usando dados de fallback');
+            DEBUG_UNITS && console.log('⚠️ Usando dados de fallback');
             return getFallbackUnits();
         }
     }
@@ -65,7 +67,7 @@
     function clearCache() {
         cachedUnits = null;
         cacheTimestamp = null;
-        console.log('🗑️ Cache de unidades limpo');
+        DEBUG_UNITS && console.log('🗑️ Cache de unidades limpo');
     }
     
     // Expose to global scope

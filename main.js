@@ -1,4 +1,6 @@
 ﻿// main.js - No ESM imports, uses global variables
+const DEBUG_LEVEL = 0; // 0 = nada | 1 = básico | 2 = médio | 3 = verboso
+
 const WS_HOST = window.location.hostname || 'localhost';
 const WS_PORT = 8090;  // Defina a porta explicitamente
 const WS_URL = `ws://${WS_HOST}:${WS_PORT}`;
@@ -191,6 +193,7 @@ const WS_BUFFER_LIMIT = 1024 * 1024;
 
 let tooltipTimer = null;
 let currentTooltip = null;
+let unitStatusCount = 0;
 
 let eventsByLocal = new Map();
 let eventsByCode = new Map();
@@ -980,6 +983,7 @@ function isValidISEP(idISEP) {
         
         // ✅ Inicia atualização de status assim que carregar unidades
         console.log('🚀 Iniciando atualização automática de status...');
+
         fetchAllClientStatuses();
         setTimeout(() => {
             fetchAllPartitionsStatus();
@@ -1240,9 +1244,6 @@ function updateStatusTabLabel() {
     if (!statusTab) return;
     
     const totalUnits = units.length;
-    const updatedUnits = Array.from(statusCache.values()).filter(s => 
-        s.armed || s.disarmed || s.allArmed || s.allDisarmed || s.partialArmed
-    ).length;
     
     let timeLabel = '';
     if (statusUpdateStartTime) {
@@ -1250,9 +1251,9 @@ function updateStatusTabLabel() {
         timeLabel = ` - ${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}`;
     }
     
-    statusTab.textContent = `Status Centrais - ${updatedUnits}/${totalUnits}${timeLabel}`;
+    statusTab.textContent = `Status Centrais - ${unitStatusCount}/${totalUnits}${timeLabel}`;
     
-    console.log(`📊 Label atualizada: ${updatedUnits}/${totalUnits} centrais com status`);
+    console.log(`📊 Label atualizada: ${unitStatusCount}/${totalUnits} centrais com status`);
 }
 
 window.updateStatusTabLabel = updateStatusTabLabel;
@@ -1838,11 +1839,14 @@ function fetchClientStatus(idISEP) {
 
 function fetchAllPartitionsStatus() {
     if (!units || units.length === 0) return;
-    
+    statusUpdateStartTime = Date.now();
+
+    // ✅ ZERA contador ao iniciar nova rodada
+    unitStatusCount = 0;
+
     const timestamp = new Date().toLocaleTimeString('pt-BR');
     console.log(`🔍 [${timestamp}] Solicitando status de partições ao Viaweb`);
-    statusUpdateStartTime = Date.now();
-    updateStatusTabLabel();
+    updateStatusTabLabel(); // Atualiza label com 0/146
     
     let requestCount = 0;
     let skippedOffline = 0;
@@ -1851,9 +1855,9 @@ function fetchAllPartitionsStatus() {
         const isep = String(unit.value).trim().toUpperCase().padStart(4, '0');
         if (!isValidISEP(isep)) return;
         
-        // ✅ Pula centrais offline
         const cached = statusCache.get(isep);
         if (cached && cached.status === 'offline') {
+            DEBUG_LEVEL >= 2 && console.log(`⚠️ [${timestamp}] ISEP ${isep} está offline, pulando consulta de partições`);
             skippedOffline++;
             return;
         }
@@ -1865,11 +1869,11 @@ function fetchAllPartitionsStatus() {
         const cmd = VC.getPartitionsCommand 
             ? VC.getPartitionsCommand(isep, cmdId) 
             : { oper: [{ acao: "executar", idISEP: isep, id: cmdId, comando: [{ cmd: "particoes" }] }] };
-        
+        DEBUG_LEVEL >= 2 && console.log(`➡️ [${timestamp}] Enviando comando de partições para ISEP ${isep}`);
         sendCommand(cmd);
     });
     
-    console.log(`📤 [${timestamp}] ${requestCount} comandos enviados (${skippedOffline} offline pulados)`);
+    DEBUG_LEVEL >= 2 && console.log(`📤 [${timestamp}] ${requestCount} comandos enviados (${skippedOffline} offline pulados)`);
 }
 
 function handlePartitionStatusResponse(resp, isep) {
@@ -1885,6 +1889,9 @@ function handlePartitionStatusResponse(resp, isep) {
         console.log(`❌ [${timestamp}] ISEP ${isep}: erro na resposta`);
         return;
     }
+    
+    // ✅ Incrementa contador SOMENTE quando recebe resposta válida
+    unitStatusCount++;
     
     const totalPartitions = data.length;
     const armedCount = data.filter(p => p.armado === 1).length;
@@ -1910,7 +1917,6 @@ function handlePartitionStatusResponse(resp, isep) {
         isArmed = armedCount > 0;
     }
 
-    // ✅ CORRIGIDO: Cria ou atualiza cache
     let cached = statusCache.get(isep);
     if (!cached) {
         cached = { status: 'online', since: Date.now() };
@@ -1931,7 +1937,7 @@ function handlePartitionStatusResponse(resp, isep) {
         updateEventList();
     }
     
-    updateStatusTabLabel();
+    updateStatusTabLabel(); // ✅ Atualiza label a cada resposta
 }
 
 // Detecta se ISEP termina com 3 (parcial válido apenas nesses)
@@ -2454,7 +2460,8 @@ function startStatusAutoUpdate() {
     if (statusUpdateInterval) clearInterval(statusUpdateInterval);
     
     console.log('🔄 Iniciando atualização automática de status (5min)');
-    
+    // ✅ ZERA contador ao iniciar nova rodada
+    unitStatusCount = 0;
     statusUpdateInterval = setInterval(() => {
         console.log('⏰ Timer disparado - atualizando status em background');
         fetchAllClientStatuses();
