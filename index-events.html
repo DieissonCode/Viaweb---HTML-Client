@@ -22,12 +22,14 @@
     <style>
         .panels-container {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 10px;
             flex: 1;
             min-height: 0;
             overflow: hidden;
         }
+        .panels-container.left-closed { grid-template-columns: 80px 1fr; }
+        .panels-container.right-closed { grid-template-columns: 1fr 80px; }
 
         .panel {
             background: var(--bg-card);
@@ -91,7 +93,7 @@
             height: 100%; 
             display: flex; 
             flex-direction: column; 
-            /* gap: 12px; */
+            gap: 12px;
             overflow: auto;
         }
         #events-container { 
@@ -191,7 +193,11 @@
         #unit-select-container label {
             font-size: 13px;
         }
-
+        
+        #unit-select {
+            max-height: 80px;
+        }
+        
         hr {
             margin: 8px 0;
         }
@@ -199,7 +205,6 @@
         .container {
             gap: 12px;
         }
-        #events-section { display: none !important; }
     </style>
 </head>
 <body>
@@ -223,24 +228,20 @@
             <div class="section-header" id="control-header">
                 <span class="toggle-arrow">◄</span>
                 <div class="header-title">Centrais de Alarmes</div>
+                <div class="header-title header-title-vertical">Centrais de Alarme</div>
             </div>
             <div class="section-content" id="control-content">
                 <div id="control-panel">
-                    <div id="unit-select-container" style="display:grid; grid-template-columns:1fr auto; gap:8px 12px; align-items:start;">
-                        <!-- coluna esquerda: busca + info -->
-                        <div style="display:flex; flex-direction:column; gap:6px;">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <label for="unit-search" style="font-size:13px; white-space:nowrap;">Unidade:</label>
-                                <input type="text" id="unit-search" placeholder="Pesquisar unidade, ID ou sigla" style="flex:1;">
-                            </div>
-                            <div id="client-info" style="padding:10px; font-size:13px; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-                                <span id="client-number">Nenhum selecionado</span>
-                                <input type="checkbox" id="auto-update">
-                                <label for="auto-update">Auto atualizar</label>
-                            </div>
-                        </div>
-                        <!-- coluna direita: lista de seleção -->
-                        <select id="unit-select" size="4" ></select>
+                    <div id="unit-select-container">
+                        <label for="unit-search">Unidade:</label>
+                        <input type="text" id="unit-search" placeholder="Pesquisar unidade, ID ou sigla">
+                        <select id="unit-select" size="3"></select>
+                    </div>
+                    
+                    <div id="client-info">
+                        Unidade: <span id="client-number">Nenhum selecionado</span>
+                        <input type="checkbox" id="auto-update">
+                        <label for="auto-update">Auto atualizar</label>
                     </div>
 
                     <div class="compact-actions">
@@ -424,9 +425,59 @@
     <script>document.getElementById('editClosureBtn').onclick = () => closureViewUI.save();</script>
     <script>document.getElementById('closeClosureViewBtn').onclick = () => closureViewUI.close();</script>
     <script>
-        // Painel de eventos desabilitado — Central ocupa largura total
-        document.getElementById('control-header').style.cursor = 'default';
-        document.querySelector('#control-header .toggle-arrow').style.display = 'none';
+        // Panel collapse/expand functionality
+        const panelsContainer = document.getElementById('panels-container');
+        const leftPanel = document.getElementById('control-panel-section');
+        const rightPanel = document.getElementById('events-section');
+
+        function updateLayout() {
+            panelsContainer.classList.remove('left-closed', 'right-closed');
+
+            const leftClosed = leftPanel.classList.contains('closed');
+            const rightClosed = rightPanel.classList.contains('closed');
+
+            if (leftClosed && rightClosed) {
+                leftPanel.classList.remove('closed');
+            }
+
+            if (leftClosed) panelsContainer.classList.add('left-closed');
+            if (rightClosed) panelsContainer.classList.add('right-closed');
+
+            document.querySelectorAll('.header-title').forEach(t => t.style.display = 'none');
+            document.querySelectorAll('.header-title:not(.header-title-vertical)').forEach(t => {
+                if (!t.closest('.panel').classList.contains('closed')) t.style.display = 'block';
+            });
+            document.querySelectorAll('.header-title-vertical').forEach(t => {
+                if (t.closest('.panel').classList.contains('closed')) t.style.display = 'block';
+            });
+        }
+
+        function handleClick(clickedPanel, otherPanel) {
+            const clickedClosed = clickedPanel.classList.contains('closed');
+            const otherClosed = otherPanel.classList.contains('closed');
+
+            if (!clickedClosed && !otherClosed) {
+                clickedPanel.classList.add('closed');
+            } else if (!clickedClosed && otherClosed) {
+                clickedPanel.classList.add('closed');
+                otherPanel.classList.remove('closed');
+            } else if (clickedClosed && !otherClosed) {
+                clickedPanel.classList.remove('closed');
+            }
+
+            updateLayout();
+        }
+
+        document.getElementById('control-header').addEventListener('click', () => {
+            handleClick(leftPanel, rightPanel);
+        });
+
+        document.getElementById('events-header').addEventListener('click', () => {
+            handleClick(rightPanel, leftPanel);
+        });
+
+        // Initialize layout on page load
+        updateLayout();
     </script>
     <script src="purify.min.js"></script>
     <!-- <script src="/js/utils/sanitizer.js"></script> -->

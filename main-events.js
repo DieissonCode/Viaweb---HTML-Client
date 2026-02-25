@@ -1,10 +1,6 @@
 ﻿// main.js - No ESM imports, uses global variables
 const DEBUG_LEVEL = 0; // 0 = nada | 1 = básico | 2 = médio | 3 = verboso
 
-// ── Painel de eventos desabilitado ──────────────────────────────────────────
-// Coloque true para reativar histórico, contadores e lista de eventos.
-const EVENTS_PANEL_ENABLED = false;
-
 const WS_HOST = window.location.hostname || 'localhost';
 const WS_PORT = 8090;  // Defina a porta explicitamente
 const WS_URL = `ws://${WS_HOST}:${WS_PORT}`;
@@ -372,7 +368,6 @@ class ClosureViewModal {
 const closureViewUI = new ClosureViewModal();
 
 async function loadClosures() {
-    if (!EVENTS_PANEL_ENABLED) return;
     try {
         const resp = await fetch('/api/logs/closures?limit=100');
         const data = await resp.json();
@@ -940,7 +935,6 @@ function hydrateEventFromDbRow(row) {
 }
 
 async function loadInitialHistory(limit = 300) {
-    if (!EVENTS_PANEL_ENABLED) return;
     try {
         const resp = await fetch(`/api/logs/events?limit=${limit}`);
         const data = await resp.json();
@@ -1224,7 +1218,6 @@ function updateZones(data) {
 
 // ---------- Contadores ----------
 function updateCounts() {
-    if (!EVENTS_PANEL_ENABLED) return;
     if (alarmCount) alarmCount.textContent = activeAlarms.size;
     
     // ✅ CORRIGIDO: conta apenas não-resolvidos
@@ -1238,7 +1231,6 @@ window.updateCounts = updateCounts;
 
 // ✅ NOVO: Atualiza contador de offline sempre que mudar cache
 function updateOfflineCount() {
-    if (!EVENTS_PANEL_ENABLED) return;
     const offlineCount = Array.from(statusCache.values()).filter(s => s.status === 'offline').length;
     const offlineCountEl = document.getElementById('offline-count');
     if (offlineCountEl) offlineCountEl.textContent = offlineCount;
@@ -1248,7 +1240,6 @@ window.updateOfflineCount = updateOfflineCount;
 
 // Atualiza label da tab de status
 function updateStatusTabLabel() {
-    if (!EVENTS_PANEL_ENABLED) return;
     const statusTab = document.querySelector('.tab-btn[data-tab="status"]');
     if (!statusTab) return;
     
@@ -1368,7 +1359,6 @@ function groupClosuresByIsepAndId(closures) {
 
 // ---------- Render de lista ----------
 async function updateEventList() {
-    if (!EVENTS_PANEL_ENABLED) return;
     const currentTab = document.querySelector('.tab-btn.active').dataset.tab;
     const filterTerm = eventsFilter.value.toLowerCase();
     eventList.innerHTML = '';
