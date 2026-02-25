@@ -1,9 +1,46 @@
 ﻿// main.js - No ESM imports, uses global variables
-const DEBUG_LEVEL = 0; // 0 = nada | 1 = básico | 2 = médio | 3 = verboso
+const DEBUG_LEVEL = 10; // 0 = nada | 1 = básico | 2 = médio | 3 = verboso
 
 // ── Painel de eventos desabilitado ──────────────────────────────────────────
 // Coloque true para reativar histórico, contadores e lista de eventos.
 const EVENTS_PANEL_ENABLED = false;
+
+// ── Estado de carregamento de partições/zonas ────────────────────────────────
+const _sectionLoad = { partitions: false, zones: false };
+
+function _setSectionLoading() {
+    _sectionLoad.partitions = false;
+    _sectionLoad.zones = false;
+    _updateSectionUI();
+}
+
+function _setSectionLoaded(section) {
+    _sectionLoad[section] = true;
+    _updateSectionUI();
+}
+
+function _updateSectionUI() {
+    const lblP = document.getElementById('label-partitions');
+    const lblZ = document.getElementById('label-zones');
+    if (lblP) {
+        lblP.classList.toggle('label-loading', !_sectionLoad.partitions);
+        lblP.classList.toggle('label-ready',   _sectionLoad.partitions);
+    }
+    if (lblZ) {
+        lblZ.classList.toggle('label-loading', !_sectionLoad.zones);
+        lblZ.classList.toggle('label-ready',   _sectionLoad.zones);
+    }
+
+    const allReady = _sectionLoad.partitions && _sectionLoad.zones;
+    const ids = ['arm-button','disarm-button','arm-all-button','disarm-all-button','toggle-partitions','toggle-zones'];
+    ids.forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.disabled = !allReady || !window.currentUser;
+        const wrapper = btn.closest('.loading-tooltip-wrapper');
+        if (wrapper) wrapper.style.cursor = allReady ? '' : 'not-allowed';
+    });
+}
 
 const WS_HOST = window.location.hostname || 'localhost';
 const WS_PORT = 8090;  // Defina a porta explicitamente
@@ -1966,6 +2003,7 @@ function handlePartitionsResponse(resp) {
     }
     updatePartitions(data);
     setUnitStatus('online', null, currentClientId);
+    _setSectionLoaded('partitions');
 }
 
 function handleZonesResponse(resp) {
@@ -1977,6 +2015,7 @@ function handleZonesResponse(resp) {
     }
     updateZones(data);
     setUnitStatus('online', null, currentClientId);
+    _setSectionLoaded('zones');
 }
 
 function applyStatusFromViaweb(viawebArr) {
@@ -2065,12 +2104,8 @@ function applyUnitSelection(val) { // Aplica a seleção de unidade (era o corpo
             clearPartitionsAndZones();
         }
 
-        armButton.disabled = false;
-        disarmButton.disabled = false;
-        armAllButton.disabled = false;
-        disarmAllButton.disabled = false;
-        togglePartitionsBtn.disabled = false;
-        toggleZonesBtn.disabled = false;
+        // Marca como carregando — desabilita botões e pinta labels de vermelho
+        _setSectionLoading();
 
         fetchPartitionsAndZones(String(unit.value));
         fetchClientStatus(String(unit.value));

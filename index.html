@@ -91,7 +91,7 @@
             height: 100%; 
             display: flex; 
             flex-direction: column; 
-            /* gap: 12px; */
+            gap: 12px;
             overflow: auto;
         }
         #events-container { 
@@ -191,7 +191,10 @@
         #unit-select-container label {
             font-size: 13px;
         }
-
+        
+        #unit-select {
+        }
+        
         hr {
             margin: 8px 0;
         }
@@ -199,7 +202,128 @@
         .container {
             gap: 12px;
         }
+        /* Loading state nos títulos de seção */
+        .section-label {
+            transition: color 0.3s ease;
+        }
+        .section-label.label-loading {
+            color: #ef4444;
+        }
+        .section-label.label-ready {
+            color: #22c55e;
+        }
+
+        /* Tooltip de loading nos botões desabilitados */
+        .loading-tooltip-wrapper {
+            position: relative;
+            display: inline-flex;
+        }
+        .loading-tooltip-wrapper .loading-tooltip {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #94a3b8;
+            font-size: 11px;
+            padding: 5px 9px;
+            border-radius: 5px;
+            white-space: nowrap;
+            border: 1px solid #334155;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .loading-tooltip-wrapper .loading-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #334155;
+        }
+        .loading-tooltip-wrapper:has(button:disabled):hover .loading-tooltip {
+            display: block;
+        }
+        /* Estado de carregamento das seções */
+        .section-title-loading {
+            color: #ef4444 !important;
+        }
+        .section-title-loaded {
+            color: #22c55e !important;
+        }
+        .section-title-loading::after {
+            content: ' ⏳';
+            font-size: 11px;
+        }
+        .section-title-loaded::after {
+            content: ' ✓';
+            font-size: 11px;
+        }
+
+        /* Tooltip de carregamento */
+        .btn-loading-wrap {
+            position: relative;
+            display: inline-flex;
+        }
+        .btn-loading-wrap .load-tooltip {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #94a3b8;
+            font-size: 11px;
+            padding: 5px 9px;
+            border-radius: 5px;
+            white-space: nowrap;
+            border: 1px solid #334155;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .btn-loading-wrap .load-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #334155;
+        }
+        .btn-loading-wrap:hover .load-tooltip {
+            display: block;
+        }
+
         #events-section { display: none !important; }
+
+        /* Estado de carregamento das seções */
+        .section-loading h3 { color: #ef4444; transition: color 0.3s; }
+        .section-loaded   h3 { color: #22c55e; transition: color 0.3s; }
+
+        /* Tooltip para botões desabilitados por carregamento */
+        .loading-tip {
+            position: relative;
+        }
+        .loading-tip::after {
+            content: attr(data-tip);
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #94a3b8;
+            font-size: 11px;
+            padding: 5px 9px;
+            border-radius: 5px;
+            white-space: nowrap;
+            border: 1px solid #334155;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .loading-tip:hover::after { display: block; }
     </style>
 </head>
 <body>
@@ -240,14 +364,26 @@
                             </div>
                         </div>
                         <!-- coluna direita: lista de seleção -->
-                        <select id="unit-select" size="4" ></select>
+                        <select id="unit-select" size="3"></select>
                     </div>
 
-                    <div class="compact-actions">
-                        <button id="arm-button" disabled>🛡️ Armar</button>
-                        <button id="disarm-button" disabled>🔓 Desarmar</button>
-                        <button id="arm-all-button" disabled>🛡️ Armar Todas</button>
-                        <button id="disarm-all-button" disabled>🔓 Desarmar Todas</button>
+                    <div class="compact-actions" id="actions-wrapper">
+                        <div class="loading-tooltip-wrapper">
+                            <button id="arm-button" disabled>🛡️ Armar</button>
+                            <span class="loading-tooltip">Aguardando carregamento da central...</span>
+                        </div>
+                        <div class="loading-tooltip-wrapper">
+                            <button id="disarm-button" disabled>🔓 Desarmar</button>
+                            <span class="loading-tooltip">Aguardando carregamento da central...</span>
+                        </div>
+                        <div class="loading-tooltip-wrapper">
+                            <button id="arm-all-button" disabled>🛡️ Armar Todas</button>
+                            <span class="loading-tooltip">Aguardando carregamento da central...</span>
+                        </div>
+                        <div class="loading-tooltip-wrapper">
+                            <button id="disarm-all-button" disabled>🔓 Desarmar Todas</button>
+                            <span class="loading-tooltip">Aguardando carregamento da central...</span>
+                        </div>
                         <button id="report-button" style="background:var(--primary)">📝 Relatório</button>
                     </div>
 
@@ -255,16 +391,22 @@
 
                     <div class="container">
                         <div>
-                            <div class="section-with-button">
-                                <h3>Partições</h3>
-                                <button id="toggle-partitions" disabled>☑️ Todas</button>
+                            <div class="section-with-button" id="partitions-section-header">
+                                <h3><span id="label-partitions" class="section-label">Partições</span></h3>
+                                <div class="loading-tooltip-wrapper">
+                                    <button id="toggle-partitions" disabled>☑️ Todas</button>
+                                    <span class="loading-tooltip">Aguardando carregamento da central...</span>
+                                </div>
                             </div>
                             <div id="partitions-list"></div>
                         </div>
                         <div>
-                            <div class="section-with-button">
-                                <h3>Zonas para Inibir (<span id="total-zones">0</span>)</h3>
-                                <button id="toggle-zones" disabled>☑️ Todas</button>
+                            <div class="section-with-button" id="zones-section-header">
+                                <h3><span id="label-zones" class="section-label">Zonas para Inibir (<span id="total-zones">0</span>)</span></h3>
+                                <div class="loading-tooltip-wrapper">
+                                    <button id="toggle-zones" disabled>☑️ Todas</button>
+                                    <span class="loading-tooltip">Aguardando carregamento da central...</span>
+                                </div>
                             </div>
                             <div class="zones-compact">
                                 <div id="zones-columns"></div>

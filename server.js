@@ -42,11 +42,11 @@ try {
   metrics = require('./metrics');
 } catch (e) {
   metrics = {
-    recordEvent: () => {},
-    recordCommand: () => {},
-    recordError: () => {},
-    recordConnection: () => {},
-    recordDisconnection: () => {},
+    recordEvent: () => { },
+    recordCommand: () => { },
+    recordError: () => { },
+    recordConnection: () => { },
+    recordDisconnection: () => { },
     getMetrics: () => ({ error: 'Metrics module not available' })
   };
 }
@@ -59,7 +59,7 @@ const TCP_HOST = '10.0.20.43';
 const TCP_PORT = 2700;
 // AES-256-CBC static key/IV (protocol requirement)
 const CHAVE = '94EF1C592113E8D27F5BB4C5D278BF3764292CEA895772198BA9435C8E9B97FD';
-const IV    = '70FC01AA8FCA3900E384EA28A5B7BCEF';
+const IV = '70FC01AA8FCA3900E384EA28A5B7BCEF';
 // ==============================
 // CORS configuration
 // Allowed origins (explicit whitelist)
@@ -151,9 +151,9 @@ function rateLimiter(req, res, next) {
   }
   if (record.count >= MAX_REQUESTS_PER_WINDOW) {
     logger.warn(`Rate limit exceeded for IP: ${ip}`);
-    return res.status(429).json({ 
-      error: 'Too many requests', 
-      message: 'Rate limit exceeded. Please try again later.' 
+    return res.status(429).json({
+      error: 'Too many requests',
+      message: 'Rate limit exceeded. Please try again later.'
     });
   }
   record.count++;
@@ -267,7 +267,7 @@ app.post('/api/logs/event', async (req, res) => {
       error: 'Falha ao salvar evento'
     });
   }
-});               
+});
 
 // ==============================
 // Logs API — closure + WebSocket broadcast
@@ -276,18 +276,18 @@ app.post('/api/logs/close', async (req, res) => {
   const codigo = event?.codigoEvento || event?.codigo || event?.code;
   const isep = event?.isep || event?.local || event?.clientId;
   const tipo = closure?.type;
-  
+
   if (!closure || !tipo || !codigo || !isep) {
     return res.status(400).json({
       success: false,
       error: 'Dados obrigatórios ausentes'
     });
   }
-  
+
   try {
     // ✅ Chama saveEventAndClosure com retry automático
     const result = await logsRepo.saveEventAndClosure(event, closure);
-    
+
     // ✅ Notifica via WebSocket apenas após sucesso
     const closureNotification = JSON.stringify({
       type: 'closure',
@@ -297,29 +297,29 @@ app.post('/api/logs/close', async (req, res) => {
       timestamp: Date.now(),
       closedBy: closure?.user?.username
     });
-    
+
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(closureNotification);
       }
     });
-    
+
     logger.info(`📢 Encerramento salvo e notificado: ${isep}-${codigo}`);
-    return res.json({ 
+    return res.json({
       success: true,
       eventId: result.eventId,
       closureId: result.closureId
     });
-    
+
   } catch (e) {
     logger.error('❌ API /api/logs/close: ' + e.message);
     metrics.recordError();
-    
+
     // ✅ Mensagem específica para o usuário
-    const userMessage = e.message.includes('deadlock') 
+    const userMessage = e.message.includes('deadlock')
       ? 'Conflito temporário ao salvar. Por favor, tente novamente.'
       : 'Falha ao salvar encerramento';
-    
+
     return res.status(500).json({
       success: false,
       error: userMessage
@@ -366,10 +366,10 @@ app.post('/api/logs/lock', (req, res) => {
     existing.operador !== operador &&
     (now - existing.timestamp) < LOCK_TIMEOUT
   ) {
-    return res.json({ 
-      success: false, 
-      locked: true, 
-      lockedBy: existing.operador 
+    return res.json({
+      success: false,
+      locked: true,
+      lockedBy: existing.operador
     });
   }
   // Acquire or renew lock
@@ -446,11 +446,14 @@ app.get('/api/units', async (req, res) => {
     const pool = await connectDatabase();
     const result = await pool.request().query(`
       SELECT
-       [NUMERO] AS value,
-       [NOME]   AS local,
-       [NOME]   AS label
-      FROM [viaweb].[Programação].[dbo].[INSTALACAO]
-      ORDER BY [NOME]
+       e.[ID_EQTO] AS value,
+       i.[NOME]   AS local,
+       i.[NOME]   AS label
+      FROM [viaweb].[Programação].[dbo].[INSTALACAO] i
+	    LEFT JOIN [viaweb].[Programação].[dbo].[EQTO] e
+      ON i.[ID_INSTALACAO] = e.[ID_INSTALACAO]
+	    WHERE (e.[NOME] not like 'Exp%' and e.[NOME] not like 'teclado%') OR e.[NOME] is null
+      ORDER BY i.[NOME]
     `);
     res.json({
       success: true,
@@ -518,7 +521,7 @@ app.get('/api/users', async (req, res) => {
 // ==============================
 // Healthcheck endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
@@ -550,7 +553,7 @@ app.get('/api/logs/closures', async (req, res) => {
           ON e.ClosureId = c.Id
         ORDER BY c.ClosedAt DESC;
       `);
-    
+
     return res.json({
       success: true,
       data: result.recordset
@@ -568,17 +571,17 @@ app.get('/api/logs/closures', async (req, res) => {
 // Edit closure procedure endpoint
 app.post('/api/logs/closure/edit', async (req, res) => {
   const { closureId, newProcedure, editedBy } = req.body || {};
-  
+
   if (!closureId || !newProcedure || !editedBy) {
     return res.status(400).json({
       success: false,
       error: 'Dados obrigatórios ausentes'
     });
   }
-  
+
   try {
     const pool = await connectLogsDatabase();
-    
+
     // Busca procedimento antigo
     const existing = await pool.request()
       .input('Id', mssql.Int, closureId)
@@ -587,26 +590,26 @@ app.post('/api/logs/closure/edit', async (req, res) => {
     if (existing.recordset.length === 0) {
       return res.status(404).json({ success: false, error: 'Encerramento não encontrado' });
     }
-    
+
     const old = existing.recordset[0];
     const closedAt = new Date(old.ClosedAt);
     const now = new Date();
     const hoursDiff = (now - closedAt) / (1000 * 60 * 60);
-    
+
     if (hoursDiff > 12) {
       return res.status(403).json({
         success: false,
         error: 'Prazo de 12 horas expirado'
       });
     }
-    
+
     const editLog = `\n\n[EDITADO em ${now.toLocaleString('pt-BR')} por ${editedBy}]\nAnterior: ${old.Procedimento}`;
-    
+
     await pool.request()
       .input('Id', mssql.Int, closureId)
       .input('NewProc', mssql.NVarChar(mssql.MAX), newProcedure + editLog)
       .query('UPDATE LOGS.LOGS.Closures SET Procedimento = @NewProc WHERE Id = @Id');
-    
+
     return res.json({ success: true });
   } catch (err) {
     logger.error('❌ API /api/logs/closure/edit: ' + err.message);
@@ -707,7 +710,7 @@ async function getUserFromDb(isep, idUsuario) {
 // User display name formatter
 function formatUserName(user) {
   if (!user) return null;
-  const nome  = user.nome || 'Sem nome';
+  const nome = user.nome || 'Sem nome';
   const cargo = user.cargo ? ` (${toTitleCase(user.cargo)})` : '';
   return `${nome}${cargo}`;
 }
@@ -727,9 +730,9 @@ async function saveEventFromTcp(op) {
   const cod = op.codigoEvento || 'N/A';
   const eventId = op.id;
 
-  if (cod === '1412') { 
-    sendAckToViaweb(eventId); 
-    return { success: true, skipped: true }; 
+  if (cod === '1412') {
+    sendAckToViaweb(eventId);
+    return { success: true, skipped: true };
   }
 
   const rawComplement = (op.zonaUsuario !== undefined ? op.zonaUsuario : op.complemento);
@@ -744,8 +747,8 @@ async function saveEventFromTcp(op) {
   if (ts < 10000000000) ts *= 1000;
 
   const armDisarmCodes = [
-    '1401','1402','1403','1404','1405','1406','1407','1408',
-    '3401','3402','3403','3404','3405','3406','3407','3408'
+    '1401', '1402', '1403', '1404', '1405', '1406', '1407', '1408',
+    '3401', '3402', '3403', '3404', '3405', '3406', '3407', '3408'
   ];
 
   const tipos = {
@@ -891,7 +894,7 @@ function sendAckToViaweb(eventId) {
   const ackCommand = ViawebCommands.createAckCommand(eventId);
 
   // Envia através do módulo wsHandler
-  if (sendAck ) {
+  if (sendAck) {
     try {
       sendAck(ackCommand);
       logger.info(`✅ ACK sent: ${eventId}`);
