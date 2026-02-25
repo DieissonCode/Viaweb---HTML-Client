@@ -191,7 +191,6 @@ function setupWebSocketServer(httpServer, options = {}) {
 
                 dbg('TCP JSON CLEAN:', jsonStr);
 
-                // ✅ NOVO: Trata múltiplos JSONs separados por \u0001
                 const jsonParts = jsonStr.split('\u0001').filter(s => s.trim());
                 
                 for (const part of jsonParts) {
