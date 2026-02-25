@@ -1,5 +1,5 @@
 ﻿// main.js - No ESM imports, uses global variables
-const DEBUG_LEVEL = 10; // 0 = nada | 1 = básico | 2 = médio | 3 = verboso
+const DEBUG_LEVEL = 0; // 0 = nada | 1 = básico | 2 = médio | 3 = verboso
 
 // ── Painel de eventos desabilitado ──────────────────────────────────────────
 // Coloque true para reativar histórico, contadores e lista de eventos.
@@ -1023,16 +1023,12 @@ function isValidISEP(idISEP) {
     try { 
         units = await window.getUnits(); 
         populateUnitSelect();
-        
-        // ✅ Inicia atualização de status assim que carregar unidades
-        console.log('🚀 Iniciando atualização automática de status...');
 
-        fetchAllClientStatuses();
-        setTimeout(() => {
-            fetchAllPartitionsStatus();
-            startStatusAutoUpdate();
-        }, 2000);
-        
+        // Dispara listarClientes por ISEP individualmente — atualiza conforme responde
+        units.forEach(unit => {
+            const isep = String(unit.value).trim().toUpperCase().padStart(4, '0');
+            if (isValidISEP(isep)) fetchClientStatus(isep);
+        });
     } catch (err) { 
         console.error('❌ Erro ao carregar unidades:', err); 
         unitSelect.innerHTML = 'Erro ao carregar unidades'; 
@@ -1040,39 +1036,7 @@ function isValidISEP(idISEP) {
     
     try { 
         await window.UsersDB.getUsers(); 
-        console.log('✅ Usuários carregados antes do histórico');
-    } catch (err) { 
-        console.error('❌ Erro ao carregar usuários:', err); 
-    }
-    
-    // Só carrega histórico DEPOIS dos usuários
-    loadInitialHistory(300);
-})();
-
-(async () => {
-    try { 
-        units = await window.getUnits(); 
-        populateUnitSelect();
-        
-        console.log('🚀 Iniciando atualização automática de status...');
-        
-        // ✅ Primeiro busca status online/offline
-        fetchAllClientStatuses();
-        
-        // ✅ Depois busca partições (aguarda 3s para cache popular)
-        setTimeout(() => {
-            fetchAllPartitionsStatus();
-            startStatusAutoUpdate();
-        }, 3000);
-        
-    } catch (err) { 
-        console.error('❌ Erro ao carregar unidades:', err); 
-        unitSelect.innerHTML = 'Erro ao carregar unidades'; 
-    }
-    
-    try { 
-        await window.UsersDB.getUsers(); 
-        console.log('✅ Usuários carregados antes do histórico');
+        console.log('✅ Usuários carregados');
     } catch (err) { 
         console.error('❌ Erro ao carregar usuários:', err); 
     }
@@ -1159,7 +1123,7 @@ function populateUnitSelect() {
         s.armed || s.disarmed || s.allArmed || s.allDisarmed || s.partialArmed
     ).length;
     
-    DEBUG_LEVEL >= 9 && console.log(`📋\tFiltradas:\t${shownUnits}\n\tTotal:\t\t${totalUnits}\n\tCom status:\t${withArmStatus}\n\tEm Cache:\t${statusCacheSize}`);
+    DEBUG_LEVEL >= 1 && console.log(`📋\tFiltradas:\t${shownUnits}\n\tTotal:\t\t${totalUnits}\n\tCom status:\t${withArmStatus}\n\tEm Cache:\t${statusCacheSize}`);
 }
 
 async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
@@ -1299,7 +1263,7 @@ function updateStatusTabLabel() {
     
     statusTab.textContent = `Status Centrais - ${unitStatusCount}/${totalUnits}${timeLabel}`;
     
-    DEBUG_LEVEL >= 9 && console.log(`📊 Label atualizada: ${unitStatusCount}/${totalUnits} centrais com status`);
+    DEBUG_LEVEL >= 1 && console.log(`📊 Label atualizada: ${unitStatusCount}/${totalUnits} centrais com status`);
 }
 
 window.updateStatusTabLabel = updateStatusTabLabel;
@@ -1866,13 +1830,6 @@ function fetchPartitionsAndZones(idISEP) {
     sendCommand(cmd2);
 }
 
-function fetchAllClientStatuses() {
-    const cmdId = generateCommandId();
-    pendingCommands.set(cmdId, resp => handleListarClientesAllResponse(resp));
-    const cmd = VC.createListarClientesCommand ? VC.createListarClientesCommand(undefined, cmdId) : { oper: [{ id: cmdId, acao: "listarClientes" }] };
-    new Promise(resolve => setTimeout(resolve, 500))
-        .then(() => sendCommand(cmd));
-}
 
 function fetchClientStatus(idISEP) {
     if (!isValidISEP(idISEP)) { console.error('❌ ISEP inválido para listarClientes:', idISEP); return; }
@@ -1885,49 +1842,10 @@ function fetchClientStatus(idISEP) {
     sendCommand(cmd);
 }
 
-function fetchAllPartitionsStatus() {
-    if (!units || units.length === 0) return;
-    statusUpdateStartTime = Date.now();
-
-    // ✅ ZERA contador ao iniciar nova rodada
-    unitStatusCount = 0;
-
-    const timestamp = new Date().toLocaleTimeString('pt-BR');
-    console.log(`🔍 [${timestamp}] Solicitando status de partições ao Viaweb`);
-    updateStatusTabLabel(); // Atualiza label com 0/146
-    
-    let requestCount = 0;
-    let skippedOffline = 0;
-    
-    units.forEach(unit => {
-        const isep = String(unit.value).trim().toUpperCase().padStart(4, '0');
-        if (!isValidISEP(isep)) return;
-        
-        const cached = statusCache.get(isep);
-        if (cached && cached.status === 'offline') {
-            DEBUG_LEVEL >= 2 && console.log(`⚠️ [${timestamp}] ISEP ${isep} está offline, pulando consulta de partições`);
-            skippedOffline++;
-            return;
-        }
-        
-        requestCount++;
-        const cmdId = generateCommandId();
-        pendingCommands.set(cmdId, resp => handlePartitionStatusResponse(resp, isep));
-        
-        const cmd = VC.getPartitionsCommand 
-            ? VC.getPartitionsCommand(isep, cmdId) 
-            : { oper: [{ acao: "executar", idISEP: isep, id: cmdId, comando: [{ cmd: "particoes" }] }] };
-        DEBUG_LEVEL >= 2 && console.log(`➡️ [${timestamp}] Enviando comando de partições para ISEP ${isep}`);
-        sendCommand(cmd);
-    });
-    
-    DEBUG_LEVEL >= 2 && console.log(`📤 [${timestamp}] ${requestCount} comandos enviados (${skippedOffline} offline pulados)`);
-}
-
 function handlePartitionStatusResponse(resp, isep) {
     const timestamp = new Date().toLocaleTimeString('pt-BR');
     const data = resp?.resposta;
-    
+
     if (!data || data.length === 0) {
         console.log(`⚠️ [${timestamp}] ISEP ${isep}: resposta vazia`);
         return;
@@ -2052,27 +1970,11 @@ function applyStatusFromViaweb(viawebArr) {
     populateUnitSelect();
 }
 
-function handleListarClientesAllResponse(resp) {
-    if (resp?.erro) { console.warn('listarClientes ALL erro:', resp.descricao || resp.erro); return; }
-    const viawebArr = resp?.viaweb;
-    if (!viawebArr || !Array.isArray(viawebArr)) return;
-    applyStatusFromViaweb(viawebArr);
-    populateUnitSelect();
-    
-    // ✅ Atualiza contador de offline
-    updateOfflineCount();
-    
-    // ✅ Atualiza tab status se estiver ativa
-    const currentTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-    if (currentTab === 'status') {
-        updateEventList();
-    }
-}
-
 function handleListarClientesResponse(resp, isepFormatted) {
     if (resp?.erro) { console.warn('listarClientes erro:', resp.descricao || resp.erro); return; }
     const viawebArr = resp?.viaweb;
     if (!viawebArr || !Array.isArray(viawebArr)) return;
+    console.log(`[status] resposta recebida: ${isepFormatted}`); // ← add isso
     applyStatusFromViaweb(viawebArr.filter(vw =>
         (vw.cliente || []).some(cli => String(cli.idISEP).toUpperCase() === isepFormatted.toUpperCase())
     ));
@@ -2160,7 +2062,6 @@ function connectWebSocket() {
         reconnectAttempts = 0;
         updateStatus(true);
         armButton.disabled = disarmButton.disabled = true;
-        fetchAllClientStatuses();
     };
 
     ws.onmessage = async (event) => {
@@ -2260,12 +2161,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const statusFilters = document.getElementById('status-filters');
         if (btn.dataset.tab === 'status') {
             statusFilters.style.display = 'flex';
-            
-            // ✅ Força atualização imediata ao abrir a tab
-            return
-            console.log('🔄 Tab Status aberta - atualizando dados...');
-            fetchAllClientStatuses();
-            setTimeout(() => fetchAllPartitionsStatus(), 2000);
         } else {
             statusFilters.style.display = 'none';
         }
@@ -2499,22 +2394,7 @@ window.addEventListener('beforeunload', () => {
 
 connectWebSocket();
 
-// Status update control
-let statusUpdateInterval = null;
-let statusUpdateStartTime = null;
 
-function startStatusAutoUpdate() {
-    if (statusUpdateInterval) clearInterval(statusUpdateInterval);
-    
-    console.log('🔄 Iniciando atualização automática de status (5min)');
-    // ✅ ZERA contador ao iniciar nova rodada
-    unitStatusCount = 0;
-    statusUpdateInterval = setInterval(() => {
-        console.log('⏰ Timer disparado - atualizando status em background');
-        fetchAllClientStatuses();
-        setTimeout(() => fetchAllPartitionsStatus(), 2000);
-    }, 300000); // 5 minutos
-}
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js')
