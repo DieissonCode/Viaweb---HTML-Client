@@ -719,7 +719,7 @@ function ingestNormalizedEvent(ev) {
                 activePendentes.get(falhaKey).resolved = true;
                 
                 const group = activePendentes.get(falhaKey);
-                console.log(`✅ Auto-encerrando pendente: ${falhaKey}`);
+                DEBUG_LEVEL >= 9 && console.log(`✅ Auto-encerrando pendente: ${falhaKey}`);
                 
                 logClosureToServer(group, 'pendente', '[ Auto-encerrado pelo sistema - Restauro recebido ]')
                     .then(() => {
@@ -1116,7 +1116,7 @@ function populateUnitSelect() {
         s.armed || s.disarmed || s.allArmed || s.allDisarmed || s.partialArmed
     ).length;
     
-    console.log(`📋 ${shownUnits}/${totalUnits} unidades visíveis, ${withArmStatus}/${statusCacheSize} com status de arme/desarme`);
+    DEBUG_LEVEL >= 9 && console.log(`📋\tFiltradas:\t${shownUnits}\n\tTotal:\t\t${totalUnits}\n\tCom status:\t${withArmStatus}\n\tEm Cache:\t${statusCacheSize}`);
 }
 
 async function initCrypto() { cryptoInstance = new window.ViawebCrypto(CHAVE, IV); }
@@ -1253,7 +1253,7 @@ function updateStatusTabLabel() {
     
     statusTab.textContent = `Status Centrais - ${unitStatusCount}/${totalUnits}${timeLabel}`;
     
-    console.log(`📊 Label atualizada: ${unitStatusCount}/${totalUnits} centrais com status`);
+    DEBUG_LEVEL >= 9 && console.log(`📊 Label atualizada: ${unitStatusCount}/${totalUnits} centrais com status`);
 }
 
 window.updateStatusTabLabel = updateStatusTabLabel;
@@ -1741,7 +1741,7 @@ function sendCommand(data) {
     // ✅ Comandos de status são sempre permitidos (mesmo sem login)
     const isStatusCommand = data?.oper?.[0]?.acao === 'listarClientes' || 
                            data?.oper?.[0]?.comando?.[0]?.cmd === 'particoes';
-    
+    console.log('➡️ Enviando comando:', data);
     if (!currentUser && !isStatusCommand) {
         console.warn('❌ Comando bloqueado: usuário não autenticado');
         authManager?.show?.();
@@ -1823,7 +1823,8 @@ function fetchAllClientStatuses() {
     const cmdId = generateCommandId();
     pendingCommands.set(cmdId, resp => handleListarClientesAllResponse(resp));
     const cmd = VC.createListarClientesCommand ? VC.createListarClientesCommand(undefined, cmdId) : { oper: [{ id: cmdId, acao: "listarClientes" }] };
-    sendCommand(cmd);
+    new Promise(resolve => setTimeout(resolve, 500))
+        .then(() => sendCommand(cmd));
 }
 
 function fetchClientStatus(idISEP) {
@@ -1896,7 +1897,7 @@ function handlePartitionStatusResponse(resp, isep) {
     const totalPartitions = data.length;
     const armedCount = data.filter(p => p.armado === 1).length;
     
-    console.log(`✅ [${timestamp}] ISEP ${isep}: ${armedCount}/${totalPartitions} partições armadas`);
+    DEBUG_LEVEL >= 9 && console.log(`✅ [${timestamp}] ISEP ${isep}: ${armedCount}/${totalPartitions} partições armadas`);
     
     let isArmed = false;
     let isPartial = false;
@@ -2216,6 +2217,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
             statusFilters.style.display = 'flex';
             
             // ✅ Força atualização imediata ao abrir a tab
+            return
             console.log('🔄 Tab Status aberta - atualizando dados...');
             fetchAllClientStatuses();
             setTimeout(() => fetchAllPartitionsStatus(), 2000);
@@ -2253,7 +2255,7 @@ async function logClosureToServer(group, type, procedureText) {
         timestamp = Date.now();
     }
     
-    console.log('📤 Enviando encerramento:', {
+    DEBUG_LEVEL >= 9 && console.log('📤 Enviando encerramento:', {
         codigo,
         isep: ev.local || ev.isep,
         complemento: ev.complemento,
@@ -2398,7 +2400,7 @@ document.getElementById('report-button')?.addEventListener('click', () => {
 function handleClosureNotification(data) {
     const { isep, codigo, complemento, closedBy } = data;
     
-    console.log('🔔 Encerramento recebido:', { isep, codigo, complemento, closedBy });
+    DEBUG_LEVEL >= 9 && console.log('🔔 Encerramento recebido:', { isep, codigo, complemento, closedBy });
 
     const myUsername = currentUser?.username || currentUser?.displayName;
     const isMyOwnClosure = closedBy && myUsername && 
